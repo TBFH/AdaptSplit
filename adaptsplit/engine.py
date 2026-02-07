@@ -116,7 +116,7 @@ class LLMEngine:
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
-        context_devices: List[str] = None,
+        prefill_devices: List[str] = None,
         decoding_devices: List[str] = None
     ):
         self.model_config = model_config
@@ -142,14 +142,14 @@ class LLMEngine:
         
         logger.info("Initializing placement group")
         
-        if context_devices != None and decoding_devices != None:
+        if prefill_devices != None and decoding_devices != None:
             assert (
-                len(context_devices) == disagg_parallel_config.context.pipeline_parallel_size * disagg_parallel_config.context.tensor_parallel_size
+                len(prefill_devices) == disagg_parallel_config.prefill.pipeline_parallel_size * disagg_parallel_config.prefill.tensor_parallel_size
                 and
                 len(decoding_devices) == disagg_parallel_config.decoding.pipeline_parallel_size * disagg_parallel_config.decoding.tensor_parallel_size
             ), "num of available devices does not fits parallel_config"
 
-        self.context_devices = context_devices
+        self.prefill_devices = prefill_devices
         self.decoding_devices = decoding_devices
 
         self.device_map = {}
@@ -158,8 +158,8 @@ class LLMEngine:
         self.node_resources = {}
         self._init_inspect()
 
-        context_deployment, decoding_deployment = self._init_deployments()
-        print(f"\033[1;34m context_deployment: {context_deployment} \t\t decoding_deployment: {decoding_deployment} \033[0m")
+        prefill_deployment, decoding_deployment = self._init_deployments()
+        print(f"\033[1;34m prefill_deployment: {prefill_deployment} \t\t decoding_deployment: {decoding_deployment} \033[0m")
         
         logger.info("Initializing prefill stage LLM engine")
         self.prefill_engine = PrefillStageLLMEngine(
@@ -168,7 +168,7 @@ class LLMEngine:
             disagg_parallel_config.prefill,
             cache_config,
             prefill_sched_config,
-            context_deployment,
+            prefill_deployment,
             self._on_new_step_output_callback,
             self._on_new_lifetime_event_callback
         )
@@ -256,11 +256,11 @@ class LLMEngine:
                         cnt += 1
             return deployment
 
-        context_deployment = []
+        prefill_deployment = []
         decoding_deployment = []
-        context_size = self.disagg_parallel_config.context.pipeline_parallel_size * self.disagg_parallel_config.context.tensor_parallel_size
+        prefill_size = self.disagg_parallel_config.prefill.pipeline_parallel_size * self.disagg_parallel_config.prefill.tensor_parallel_size
         decoding_size = self.disagg_parallel_config.decoding.pipeline_parallel_size * self.disagg_parallel_config.decoding.tensor_parallel_size
-        return get_deployment(context_deployment, self.context_devices, context_size), \
+        return get_deployment(prefill_deployment, self.prefill_devices, prefill_size), \
                 get_deployment(decoding_deployment, self.decoding_devices, decoding_size)
     
     def _on_new_step_output_callback(self, request_id: int, step_output: StepOutput):

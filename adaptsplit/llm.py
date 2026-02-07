@@ -37,7 +37,7 @@ class OfflineLLM:
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
-        context_devices: List[str] = None,
+        prefill_devices: List[str] = None,
         decoding_devices: List[str] = None
     ):
         self.engine = LLMEngine(
@@ -46,7 +46,7 @@ class OfflineLLM:
             cache_config,
             prefill_sched_config,
             decoding_sched_config,
-            context_devices,
+            prefill_devices,
             decoding_devices
         )
         
