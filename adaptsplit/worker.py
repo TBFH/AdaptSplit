@@ -232,10 +232,10 @@ class ParaWorker:
             (available_gpu_memory * gpu_memory_utilization - peak_runtime_memory)
             // block_size_in_bytes
         )
-        num_cpu_blocks = int(cpu_swap_space // block_size_in_bytes)
+        # num_cpu_blocks = int(cpu_swap_space // block_size_in_bytes)
         num_gpu_blocks = max(num_gpu_blocks, 0)
         logger.info(f"num_gpu_blocks: {num_gpu_blocks}")
-        num_cpu_blocks = max(num_cpu_blocks, 0)
+        num_cpu_blocks = 1
         logger.info(f"num_cpu_blocks: {num_cpu_blocks}")
 
         # Reset the seed to ensure that the random state is not affected by
@@ -245,9 +245,10 @@ class ParaWorker:
         return {
             'node_id': ray.get_runtime_context().get_node_id(),
             'num_gpu_blocks': num_gpu_blocks,
-            'num_cpu_blocks': 1,
+            'num_cpu_blocks': num_cpu_blocks,
             'available_vram': available_gpu_memory,
-            'peak_vram': peak_runtime_memory
+            'model_vram': peak_runtime_memory,
+            'kvcache_vram': available_gpu_memory * gpu_memory_utilization - peak_runtime_memory,
         }
 
     def step(

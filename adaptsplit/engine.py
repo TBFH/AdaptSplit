@@ -170,7 +170,8 @@ class LLMEngine:
             prefill_sched_config,
             prefill_deployment,
             self._on_new_step_output_callback,
-            self._on_new_lifetime_event_callback
+            self._on_new_lifetime_event_callback,
+            self.device_map
         )
         
         logger.info("Initializing decoding stage LLM engine")
@@ -184,7 +185,8 @@ class LLMEngine:
             self.prefill_engine.clear_migrated_blocks_callback,
             self._on_new_step_output_callback,
             self._on_new_lifetime_event_callback,
-            self.prefill_engine.workers
+            self.prefill_engine.workers,
+            self.device_map
         )
         
         # request_id -> list of StepOutput

@@ -90,6 +90,7 @@ class SingleStageLLMEngine(ABC):
         deployment,
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],   # The LLMEngine's callback function when a new StepOutput of a particular request is generated
         engine_on_new_lifetime_event_callback: Optional[Callable[[int, LifetimeEvent, bool], None]] = None,   # The LLMEngine's callback function when a new LifetimeEvent of a particular request is generated
+        device_map: Dict[str, str] = None,
     ):
         self.stage = stage
         self.model_config = model_config
@@ -109,6 +110,8 @@ class SingleStageLLMEngine(ABC):
         
         # workers[i][j] is the j-th tensor-parallel worker in pipeline stage i
         self.workers = []
+
+        self.device_map = device_map
     
     async def initialize(self):
         """Initialize workers, load models and initialize k/v cache
@@ -205,8 +208,8 @@ class SingleStageLLMEngine(ABC):
             node_name = self.device_map[result['node_id']]
             gpu_block = result['num_gpu_blocks']
             available_vram = result['available_vram']
-            model_vram = result['peak_vram']
-            kvcache_vram = available_vram * self.cache_config.gpu_memory_utilization - model_vram
+            model_vram = result['model_vram']
+            kvcache_vram = result['kvcache_vram']
             gpu_blocks.append(gpu_block)
             outlogs += f"{node_name}: \n"
             outlogs += f"\t Block Available: {gpu_block} \n"
@@ -215,12 +218,10 @@ class SingleStageLLMEngine(ABC):
             outlogs += f"\t VRAM for Model: {((model_vram) / (1024**3)):.2f} GB \n"
             outlogs += f"\t VRAM for KVCache: {((kvcache_vram) / (1024**3)):.2f} GB \n"
         print(outlogs)
+        print("gpu_blocks: ", gpu_blocks)
+
         num_gpu_blocks = min(gpu_blocks)
-            
-        # if self.stage == Stage.PREFILL:
-        #     # Do not set to 0 to avoid division by 0
-        #     logger.info(f"The engine performs prefill stage, setting num_cpu_blocks to 1")
-        num_cpu_blocks = 1
+        num_cpu_blocks = 1  # Do not set to 0 to avoid division by 0
         logger.info(f"Profiling result: num_gpu_blocks: {num_gpu_blocks}, num_cpu_blocks: {num_cpu_blocks}")
         
         logger.info("Allocating kv cache")
@@ -288,7 +289,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         sched_config: PrefillStageSchedConfig,
         deployment,
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
-        engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None]
+        engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
+        device_map: Dict[str, str]
     ):
         super().__init__(
             Stage.PREFILL,
@@ -298,7 +300,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
             sched_config,
             deployment,
             engine_on_new_step_output_callback,
-            engine_on_new_lifetime_event_callback
+            engine_on_new_lifetime_event_callback,
+            device_map
         )
         
         # All the batchedrequests that are pushed into the pipeline
@@ -474,7 +477,8 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         clear_migrated_blocks_callback: Callable[[Request], None],
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
-        prefill_workers: List[List[ParaWorker]]
+        prefill_workers: List[List[ParaWorker]],
+        device_map: Dict[str, str]
     ):
         super().__init__(
             Stage.DECODING,
@@ -484,7 +488,8 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             sched_config,
             deployment,
             engine_on_new_step_output_callback,
-            engine_on_new_lifetime_event_callback
+            engine_on_new_lifetime_event_callback,
+            device_map
         )
         
         self.bridge_queue = bridge_queue
