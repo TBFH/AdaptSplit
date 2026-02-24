@@ -301,7 +301,8 @@ class ParaWorker:
         self.execution_time += time.time() - start
         # print(f"Worker {self.stage}.#{self.worker_id} Step end")
 
-        return generated_tokens_ids, copy.deepcopy(self.intermed_output)
+        # return generated_tokens_ids, copy.deepcopy(self.intermed_output)
+        return generated_tokens_ids, self.intermed_output.clone()
     
     def send_kvcache(
         self,
@@ -311,9 +312,15 @@ class ParaWorker:
         kcache_to_migrate = []
         vcache_to_migrate = []
         for idx in source_block_indexes:
-            kcache_to_migrate.append(self.k_cache[idx, layer_bound[0]:layer_bound[1], :, :, :])
-            vcache_to_migrate.append(self.v_cache[idx, layer_bound[0]:layer_bound[1], :, :, :])
-        # return copy.deepcopy(kcache_to_migrate), copy.deepcopy(vcache_to_migrate)
+            kcache_to_migrate.append(self.k_cache[idx, layer_bound[0]:layer_bound[1], :, :, :].clone())
+            vcache_to_migrate.append(self.v_cache[idx, layer_bound[0]:layer_bound[1], :, :, :].clone())
+        
+        # 计算将要传输的KVCache内存占用大小
+        # total_bytes = 0
+        # for tensor in kcache_to_migrate:
+        #     total_bytes += tensor.nbytes
+        # print(f"\033[1;35m kvcache_to_migrate mem_usage: {total_bytes*2 / (1024 ** 2)} MiB \033[0m")
+
         return kcache_to_migrate, vcache_to_migrate
 
     def receive_kvcache(

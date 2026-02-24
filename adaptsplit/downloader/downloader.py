@@ -24,7 +24,7 @@ REPO_ID_SEPARATOR = "--"
 # cache - where the converted weights are saved
 # default_cache = os.path.join(os.path.expanduser("~"), ".cache", "adaptsplit")
 # default_cache = os.path.join("/mnt/Data/austin/", ".cache", "adaptsplit")
-default_cache = os.path.join("/mnt/Data/austin/", ".cache", "testserve")
+default_cache = os.path.join("/mnt/Data/austin/hf_models/", ".cache", "testserve")
 ADAPTSPLIT_CACHE = os.getenv("ADAPTSPLIT_CACHE", default_cache)
 
 # MODEL_REGISTRY - Supported models
