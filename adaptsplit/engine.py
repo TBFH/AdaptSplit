@@ -119,6 +119,14 @@ class LLMEngine:
         prefill_devices: List[str] = None,
         decoding_devices: List[str] = None
     ):
+        # pipeline_distribution definition
+        if len(disagg_parallel_config.prefill.pipeline_distribution) == 0:
+            pp_size = disagg_parallel_config.prefill.pipeline_parallel_size
+            disagg_parallel_config.prefill.pipeline_distribution = [model_config.get_num_layers() // pp_size] * pp_size
+        if len(disagg_parallel_config.decoding.pipeline_distribution) == 0:
+            pp_size = disagg_parallel_config.decoding.pipeline_parallel_size
+            disagg_parallel_config.decoding.pipeline_distribution = [model_config.get_num_layers() // pp_size] * pp_size
+
         self.model_config = model_config
         self.disagg_parallel_config = disagg_parallel_config
         self.cache_config = cache_config

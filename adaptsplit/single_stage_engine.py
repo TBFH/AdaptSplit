@@ -512,12 +512,10 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
     def init_migrate_pairs(self):
         # 检查worker所部署分层是否重叠
         def check_overlap(prefill: ParallelConfig, decode: ParallelConfig):
-            prefill_layers_per_worker = self.model_config.get_num_layers() // prefill.pipeline_parallel_size
-            decode_layers_per_worker = self.model_config.get_num_layers() // decode.pipeline_parallel_size
-            prefill_start = prefill.pipeline_parallel_rank * prefill_layers_per_worker
-            decode_start = decode.pipeline_parallel_rank * decode_layers_per_worker
-            prefill_range = list(range(prefill_start, prefill_start + prefill_layers_per_worker))
-            decode_range = list(range(decode_start, decode_start + decode_layers_per_worker))
+            prefill_dist = prefill.pipeline_distribution[0:prefill.pipeline_parallel_rank+1]
+            decode_dist = decode.pipeline_distribution[0:decode.pipeline_parallel_rank+1]
+            prefill_range = list(range(sum(prefill_dist[:-1]), sum(prefill_dist)))
+            decode_range = list(range(sum(decode_dist[:-1]), sum(decode_dist)))
             overlap = sorted(set(prefill_range) & set(decode_range))
             if overlap:
                 prefill_idxes = [i - prefill_range[0] for i in overlap]
@@ -574,14 +572,15 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         )
 
 
-        # 仅支持流水线并行，不支持张良并行
+        # 仅支持流水线并行，不支持张量并行
         # 重叠分层间进行KVCache传输
         handles = []
         for prefill_worker, decode_worker, prefill_bound, decode_bound in self.migration_pairs:
             remote_prefill_kvcache = prefill_worker.send_kvcache.remote(migrating_req.block_indexes, prefill_bound)
             handle = decode_worker.receive_kvcache.remote(target_block_indexes, decode_bound, remote_prefill_kvcache)
             handles.append(handle)
-        ray.get(handles)
+        # ray.get(handles)
+        await asyncio.wait(handles)
 
 
         self.engine_on_new_lifetime_event_callback(
