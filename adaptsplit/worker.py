@@ -133,7 +133,7 @@ class ParaWorker:
             "Free_VRAM": free_memory,
             "NodeID": node_id,
             "Rank": self.parallel_config.pipeline_parallel_rank,
-            # "Num_Layers": self.parallel_config.pipeline_distribution[self.parallel_config.pipeline_parallel_rank]
+            "Num_Layers": self.model_config.get_num_layers(self.parallel_config),
         }
 
     def init_model(self):
@@ -249,6 +249,7 @@ class ParaWorker:
             'available_vram': available_gpu_memory,
             'model_vram': peak_runtime_memory,
             'kvcache_vram': available_gpu_memory * gpu_memory_utilization - peak_runtime_memory,
+            'num_layers': self.init_resources['Num_Layers'],
         }
 
     def step(

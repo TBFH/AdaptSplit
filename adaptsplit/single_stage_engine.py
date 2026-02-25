@@ -201,7 +201,7 @@ class SingleStageLLMEngine(ABC):
             self.cache_config.gpu_memory_utilization,
             self.cache_config.cpu_swap_space,
         )
-        outlogs = "[GPU Profiles] \n"
+        outlogs = f"\n\033[1;32m--[Node Profiles for {self.stage} Stage]--\033[0m\n"
         gpu_blocks = []
         for future in futures:
             result = ray.get(future)
@@ -212,13 +212,14 @@ class SingleStageLLMEngine(ABC):
             kvcache_vram = result['kvcache_vram']
             gpu_blocks.append(gpu_block)
             outlogs += f"{node_name}: \n"
-            outlogs += f"\t Block Available: {gpu_block} \n"
+            outlogs += f"\t Node ID: {result['node_id']} \n"
             outlogs += f"\t VRAM Available: {((available_vram) / (1024**3)):.2f} GB \n"
             outlogs += f"\t VRAM Utilization Constraint: {self.cache_config.gpu_memory_utilization * 100}% \n"
             outlogs += f"\t VRAM for Model: {((model_vram) / (1024**3)):.2f} GB \n"
             outlogs += f"\t VRAM for KVCache: {((kvcache_vram) / (1024**3)):.2f} GB \n"
+            outlogs += f"\t Num Blocks for KVCache: {gpu_block} \n"
+            outlogs += f"\t Num Layers Loaded: {result['num_layers']} \n"
         print(outlogs)
-        print("gpu_blocks: ", gpu_blocks)
 
         num_gpu_blocks = min(gpu_blocks)
         num_cpu_blocks = 1  # Do not set to 0 to avoid division by 0

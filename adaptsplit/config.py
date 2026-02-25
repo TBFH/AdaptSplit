@@ -37,6 +37,7 @@ class ParallelConfig:
         tensor_parallel_rank: rank in the tensor parallel group.
         pipeline_parallel_size: number of pipeline parallel groups.
         pipeline_parallel_rank: rank in the pipeline parallel group.
+        pipeline_distribution: num of layers per stage in pipeline parallel group.
     """
 
     def __init__(
@@ -45,11 +46,19 @@ class ParallelConfig:
         tensor_parallel_rank: int = 0,
         pipeline_parallel_size: int = 1,
         pipeline_parallel_rank: int = 0,
+        pipeline_distribution: List[int] = [],
     ) -> None:
         self.tensor_parallel_size = tensor_parallel_size
         self.tensor_parallel_rank = tensor_parallel_rank
         self.pipeline_parallel_size = pipeline_parallel_size
         self.pipeline_parallel_rank = pipeline_parallel_rank
+
+        if len(pipeline_distribution) > 0:
+            assert len(pipeline_distribution) == pipeline_parallel_size, (
+                f"Number of stages in pipeline_distribution {pipeline_distribution} must fit "
+                f"the size of pipeline parallel group {pipeline_parallel_size}"
+            )
+        self.pipeline_distribution = pipeline_distribution
 
         self.world_size = pipeline_parallel_size * tensor_parallel_size
         self.use_parallel = self.world_size > 1
@@ -60,7 +69,7 @@ class ParallelConfig:
             self.tensor_parallel_rank,
             self.pipeline_parallel_size,
             self.pipeline_parallel_rank,
-        ]
+        ] + self.pipeline_distribution
 
     def is_last_stage(self) -> bool:
         return self.pipeline_parallel_rank == self.pipeline_parallel_size - 1
@@ -280,13 +289,16 @@ class ModelConfig:
         return max_model_len
 
     def get_num_layers(self, parallel_config: ParallelConfig = ParallelConfig()) -> int:
-        total_num_hidden_layers = self.hf_config.num_hidden_layers
-        assert total_num_hidden_layers % parallel_config.pipeline_parallel_size == 0, (
-            f"Number of layers ({total_num_hidden_layers}) must be divisible "
-            f"by the size of pipeline parallel group "
-            f"({parallel_config.pipeline_parallel_size})."
-        )
-        return total_num_hidden_layers // parallel_config.pipeline_parallel_size
+        if len(parallel_config.pipeline_distribution) == 0:
+            total_num_hidden_layers = self.hf_config.num_hidden_layers
+            assert total_num_hidden_layers % parallel_config.pipeline_parallel_size == 0, (
+                f"Number of layers ({total_num_hidden_layers}) must be divisible "
+                f"by the size of pipeline parallel group "
+                f"({parallel_config.pipeline_parallel_size})."
+            )
+            return total_num_hidden_layers // parallel_config.pipeline_parallel_size
+        else:
+            return parallel_config.pipeline_distribution[parallel_config.pipeline_parallel_rank]
 
     def get_model_size_in_bytes(
         self, parallel_config: ParallelConfig = ParallelConfig()
