@@ -148,8 +148,6 @@ class LLMEngine:
                 address="ray://219.222.20.79:30807"
             )
         
-        logger.info("Initializing placement group")
-        
         if prefill_devices != None and decoding_devices != None:
             assert (
                 len(prefill_devices) == disagg_parallel_config.prefill.pipeline_parallel_size * disagg_parallel_config.prefill.tensor_parallel_size
@@ -291,45 +289,6 @@ class LLMEngine:
                 self.request_lifetime_events[request_id][-1].event_type == event.event_type:
             return
         self.request_lifetime_events[request_id].append(event)
-    
-    def _init_placement_groups(self) -> Optional[List[PlacementGroup]]:
-        """
-        Create placement groups for all engines and all workers
-        
-        Currently we force the same layer of the prefill & decoding stage to be executed
-        on the same node (we call this "aligned"). This simplifies k/v cache migration.
-        """
-        prefill_pp = self.disagg_parallel_config.prefill.pipeline_parallel_size
-        prefill_tp = self.disagg_parallel_config.prefill.tensor_parallel_size
-        decoding_pp = self.disagg_parallel_config.decoding.pipeline_parallel_size
-        decoding_tp = self.disagg_parallel_config.decoding.tensor_parallel_size
-        
-        # Each placement group is responsible for `layer_per_placement_group` layers
-        layer_per_prefill_pp = self.model_config.get_num_layers(self.disagg_parallel_config.prefill)
-        layer_per_decoding_pp = self.model_config.get_num_layers(self.disagg_parallel_config.decoding)
-        layer_per_placement_group = math.lcm(layer_per_prefill_pp, layer_per_decoding_pp)
-        
-        # Each placement group contains `workers_per_placement_group` workers
-        workers_per_placement_group = \
-            layer_per_placement_group // layer_per_prefill_pp * prefill_tp \
-            + layer_per_placement_group // layer_per_decoding_pp * decoding_tp
-        
-        # There should be `num_placement_groups` placement groups in total
-        num_placement_groups = self.model_config.get_num_layers() // layer_per_placement_group
-        assert num_placement_groups * workers_per_placement_group == \
-            prefill_pp * prefill_tp + decoding_pp * decoding_tp
-        
-        # Create placement groups
-        placement_groups = []
-        for i in range(num_placement_groups):
-            placement_group = ray.util.placement_group(
-                [ { "GPU": 1 }] * workers_per_placement_group,
-                strategy="STRICT_PACK",
-            )
-            ray.get(placement_group.ready(), timeout=1000)
-            placement_groups.append(placement_group)
-        
-        return placement_groups
         
     async def initialize(self):
         await asyncio.gather(
