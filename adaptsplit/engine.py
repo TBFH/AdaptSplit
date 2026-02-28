@@ -31,6 +31,7 @@ from adaptsplit.single_stage_engine import (
     DecodingStageLLMEngine
 )
 from adaptsplit.lifetime import LifetimeEvent, LifetimeEventType
+from adaptsplit.global_scheduler import GlobalScheduler
 
 logger = init_logger(__name__)
 
@@ -205,6 +206,12 @@ class LLMEngine:
         # Cleared by the caller of self.generate() (i.e. the engine does not clear that)
         # TODO: clear this automatically to avoid memory leak
         self.request_lifetime_events: Dict[int, List[LifetimeEvent]] = {}
+
+        # Initialize global scheduler
+        self.global_scheduler = GlobalScheduler(
+            prefill_engines=[self.prefill_engine],
+            decoding_engine=self.decoding_engine
+        )
         
         self.engine_initialized = False
 
@@ -334,7 +341,8 @@ class LLMEngine:
         await asyncio.gather(
             self.prefill_engine.start_event_loop(),
             self.decoding_engine.start_event_loop(),
-            self._start_my_event_loop()
+            self.global_scheduler.start_event_loop()
+            # self._start_my_event_loop()
         )
         
     async def generate(
@@ -365,7 +373,8 @@ class LLMEngine:
         self.request_lifetime_events[req.request_id] = []
         
         self._on_new_lifetime_event_callback(req.request_id, LifetimeEvent(LifetimeEventType.Issued))
-        self.prefill_engine.add_request(req)
+        # self.prefill_engine.add_request(req)
+        self.global_scheduler.add_request(req)
         
         while True:
             try:

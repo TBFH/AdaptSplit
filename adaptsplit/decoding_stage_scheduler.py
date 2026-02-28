@@ -148,6 +148,10 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             ]) + self._get_block_needed(request.get_input_len() + request.get_output_len()) \
                 <= self.block_manager.max_num_gpu_blocks
         )
+    
+    # Add Prefill Requests
+    def add_new_request(self, request: Request) -> None:
+        self.waiting_queue.append(request)
 
     # Requests-related methods
     async def add_request(self, migrating_req: MigratingRequest) -> None:

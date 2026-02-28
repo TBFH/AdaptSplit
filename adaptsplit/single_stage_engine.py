@@ -503,6 +503,9 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
 
         self.prefill_workers = prefill_workers
         self.migration_pairs = []
+
+    def add_new_request(self, request: Request):
+        self.scheduler.add_new_request(request)
     
     def _free_request_resources(self, request_id: int):
         super()._free_request_resources(request_id)

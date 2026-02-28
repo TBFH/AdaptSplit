@@ -81,4 +81,14 @@ class Stage(Enum):
 
     def __str__(self) -> str:
         return self.value
-    
+
+
+class Policy(Enum):
+    """Inference route of a request"""
+
+    HPHD = "hphd"
+    HPLD = "hpld"
+    LPLD = "lpld"
+
+    def __str__(self) -> str:
+        return self.value

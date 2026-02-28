@@ -2,7 +2,7 @@
 from typing import List, Optional, Union, Tuple
 import time
 
-from adaptsplit.utils import Counter
+from adaptsplit.utils import Counter, Policy
 from adaptsplit.config import (
     ParallelConfig
 )
@@ -176,7 +176,8 @@ class Request:
         prompt: str,
         prompt_token_ids: List[int],
         sampling_params: SamplingParams = SamplingParams(),
-        priority: int = 0
+        priority: int = 0,
+        policy: Optional[Policy] = None
     ):
         # static states
         self.arrival_time = arrival_time
@@ -195,6 +196,7 @@ class Request:
         self.last_step_time = 0.0
 
         self.priority = priority
+        self.policy = policy
 
     def get_priority(self) -> int:
         return self.priority
