@@ -38,6 +38,8 @@ class ParallelConfig:
         pipeline_parallel_size: number of pipeline parallel groups.
         pipeline_parallel_rank: rank in the pipeline parallel group.
         pipeline_distribution: num of layers per stage in pipeline parallel group.
+        data_parallel_size: number of data parallel group.
+        data_parallel_rank: rank in the data parallel group.
     """
 
     def __init__(
@@ -47,11 +49,15 @@ class ParallelConfig:
         pipeline_parallel_size: int = 1,
         pipeline_parallel_rank: int = 0,
         pipeline_distribution: List[int] = [],
+        data_parallel_size: int = 1,
+        data_parallel_rank: int = 0,
     ) -> None:
         self.tensor_parallel_size = tensor_parallel_size
         self.tensor_parallel_rank = tensor_parallel_rank
         self.pipeline_parallel_size = pipeline_parallel_size
         self.pipeline_parallel_rank = pipeline_parallel_rank
+        self.data_parallel_size = data_parallel_size
+        self.data_parallel_rank = data_parallel_rank
 
         if len(pipeline_distribution) > 0:
             assert len(pipeline_distribution) == pipeline_parallel_size, (

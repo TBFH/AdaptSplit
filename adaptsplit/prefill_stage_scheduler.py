@@ -237,7 +237,7 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
     
     def print_status(self):
         # logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.num_on_fly_request_block} blocks occupied by on-the-fly requests")
-        logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.get_processing_num_requests()} on-the-fly requests")
+        logger.info(f"(prefill-{self.parallel_config.data_parallel_rank}) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.get_processing_num_requests()} on-the-fly requests")
 
 def get_prefill_stage_scheduler(
     sched_config: PrefillStageSchedConfig,

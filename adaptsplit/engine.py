@@ -117,8 +117,8 @@ class LLMEngine:
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
-        prefill_devices: List[str] = None,
-        decoding_devices: List[str] = None
+        prefill_devices: Optional[List[str]] = None,
+        decoding_devices: Optional[List[str]] = None
     ):
         # pipeline_distribution definition
         if len(disagg_parallel_config.prefill.pipeline_distribution) == 0:
@@ -149,12 +149,14 @@ class LLMEngine:
                 address="ray://219.222.20.79:30807"
             )
         
-        if prefill_devices != None and decoding_devices != None:
+        if prefill_devices != None:
             assert (
-                len(prefill_devices) == disagg_parallel_config.prefill.pipeline_parallel_size * disagg_parallel_config.prefill.tensor_parallel_size
-                and
-                len(decoding_devices) == disagg_parallel_config.decoding.pipeline_parallel_size * disagg_parallel_config.decoding.tensor_parallel_size
-            ), "num of available devices does not fits parallel_config"
+                len(prefill_devices) == disagg_parallel_config.prefill.data_parallel_size
+            ), "num of available prefill devices does not fit data_parallel_size"
+        if decoding_devices != None:
+            assert (
+                len(decoding_devices) == disagg_parallel_config.decoding.pipeline_parallel_size
+            ), "num of available decoding devices does not fits pipeline_parallel_size"
 
         self.prefill_devices = prefill_devices
         self.decoding_devices = decoding_devices
@@ -169,17 +171,23 @@ class LLMEngine:
         print(f"\033[1;34m prefill_deployment: {prefill_deployment} \t\t decoding_deployment: {decoding_deployment} \033[0m")
         
         logger.info("Initializing prefill stage LLM engine")
-        self.prefill_engine = PrefillStageLLMEngine(
-            self.bridge_queue,
-            model_config,
-            disagg_parallel_config.prefill,
-            cache_config,
-            prefill_sched_config,
-            prefill_deployment,
-            self._on_new_step_output_callback,
-            self._on_new_lifetime_event_callback,
-            self.device_map
-        )
+        self.prefill_engines: List[PrefillStageLLMEngine] = []
+        for i in range(disagg_parallel_config.prefill.data_parallel_size):
+            parallel_config = copy.deepcopy(disagg_parallel_config.prefill)
+            parallel_config.data_parallel_rank = i
+            self.prefill_engines.append(
+                PrefillStageLLMEngine(
+                    self.bridge_queue,
+                    model_config,
+                    parallel_config,
+                    cache_config,
+                    prefill_sched_config,
+                    [prefill_deployment[i]],
+                    self._on_new_step_output_callback,
+                    self._on_new_lifetime_event_callback,
+                    self.device_map
+                )
+            )
         
         logger.info("Initializing decoding stage LLM engine")
         self.decoding_engine = DecodingStageLLMEngine(
@@ -189,10 +197,10 @@ class LLMEngine:
             cache_config,
             decoding_sched_config,
             decoding_deployment,
-            self.prefill_engine.clear_migrated_blocks_callback,
+            [engine.clear_migrated_blocks_callback for engine in self.prefill_engines],
             self._on_new_step_output_callback,
             self._on_new_lifetime_event_callback,
-            self.prefill_engine.workers,
+            [engine.workers for engine in self.prefill_engines],
             self.device_map
         )
         
@@ -209,7 +217,7 @@ class LLMEngine:
 
         # Initialize global scheduler
         self.global_scheduler = GlobalScheduler(
-            prefill_engines=[self.prefill_engine],
+            prefill_engines=self.prefill_engines,
             decoding_engine=self.decoding_engine
         )
         
@@ -265,7 +273,8 @@ class LLMEngine:
             else:
                 cnt = 0
                 for node_id, res in self.node_resources.items():
-                    if res['Free_VRAM'] > 4096 and 'jetson' in self.device_map[node_id] and node_id not in selected and cnt < parallel_size:
+                    # if res['Free_VRAM'] > 4096 and 'jetson' in self.device_map[node_id] and node_id not in selected and cnt < parallel_size:
+                    if res['Free_VRAM'] > 4096 and node_id not in selected and cnt < parallel_size:
                         deployment.append(node_id)
                         selected.extend([self.device_map[node_id], node_id])
                         cnt += 1
@@ -273,7 +282,8 @@ class LLMEngine:
 
         prefill_deployment = []
         decoding_deployment = []
-        prefill_size = self.disagg_parallel_config.prefill.pipeline_parallel_size * self.disagg_parallel_config.prefill.tensor_parallel_size
+        # prefill_size = self.disagg_parallel_config.prefill.pipeline_parallel_size * self.disagg_parallel_config.prefill.tensor_parallel_size
+        prefill_size = self.disagg_parallel_config.prefill.data_parallel_size
         decoding_size = self.disagg_parallel_config.decoding.pipeline_parallel_size * self.disagg_parallel_config.decoding.tensor_parallel_size
         return get_deployment(prefill_deployment, self.prefill_devices, prefill_size), \
                 get_deployment(decoding_deployment, self.decoding_devices, decoding_size)
@@ -298,8 +308,11 @@ class LLMEngine:
         self.request_lifetime_events[request_id].append(event)
         
     async def initialize(self):
+        prefill_init_tasks = []
+        for engine in self.prefill_engines:
+            prefill_init_tasks.append(asyncio.create_task(engine.initialize()))
         await asyncio.gather(
-            self.prefill_engine.initialize(),
+            *prefill_init_tasks,
             self.decoding_engine.initialize()
         )
         self.decoding_engine.init_migrate_pairs()
@@ -324,7 +337,9 @@ class LLMEngine:
         """
         call func_name asynchronously on all workers (prefill/decoding/both), return the futures immediately
         """
-        handlers = self.prefill_engine._remote_call_all_workers_async(func_name, *args)
+        handlers = []
+        for engine in self.prefill_engines:
+            handlers += engine._remote_call_all_workers_async(func_name, *args)
         handlers += self.decoding_engine._remote_call_all_workers_async(func_name, *args)
         return handlers
 
@@ -338,8 +353,11 @@ class LLMEngine:
         """
         logger.info("Starting LLMEngine's event loops")
         assert self.engine_initialized, "Engine not initialized. Please call engine.initialize() before starting event loops."
+        prefill_tasks = []
+        for engine in self.prefill_engines:
+            prefill_tasks.append(asyncio.create_task(engine.start_event_loop()))
         await asyncio.gather(
-            self.prefill_engine.start_event_loop(),
+            *prefill_tasks,
             self.decoding_engine.start_event_loop(),
             self.global_scheduler.start_event_loop()
             # self._start_my_event_loop()
@@ -373,7 +391,6 @@ class LLMEngine:
         self.request_lifetime_events[req.request_id] = []
         
         self._on_new_lifetime_event_callback(req.request_id, LifetimeEvent(LifetimeEventType.Issued))
-        # self.prefill_engine.add_request(req)
         self.global_scheduler.add_request(req)
         
         while True:
@@ -392,7 +409,8 @@ class LLMEngine:
         del self.request_outputs[req.request_id]
 
     def abort_request(self, request_id: int):
-        self.prefill_engine.abort_request(request_id)
+        for engine in self.prefill_engines:
+            engine.abort_request(request_id)
         self.decoding_engine.abort_request(request_id)
         
 def add_engine_cli_args(parser: argparse.ArgumentParser):

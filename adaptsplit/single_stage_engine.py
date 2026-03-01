@@ -484,10 +484,10 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         cache_config: CacheConfig,
         sched_config: DecodingStageSchedConfig,
         deployment,
-        clear_migrated_blocks_callback: Callable[[Request], None],
+        clear_migrated_blocks_callbacks: List[Callable[[Request], None]],
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
-        prefill_workers: List[List[ParaWorker]],
+        prefill_workers: List[List[List[ParaWorker]]],
         device_map: Dict[str, str]
     ):
         super().__init__(
@@ -503,7 +503,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         )
         
         self.bridge_queue = bridge_queue
-        self.clear_migrated_blocks_callback = clear_migrated_blocks_callback
+        self.clear_migrated_blocks_callbacks = clear_migrated_blocks_callbacks
         
         # All the batchedrequests that are pushed into the pipeline
         # Note: len(batched_in_pipeline) <= pp_size and batches are appended in FIFO
@@ -518,8 +518,8 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
     
     def _free_request_resources(self, request_id: int):
         super()._free_request_resources(request_id)
-        self.request_events.pop(request_id)
-        self.request_outputs.pop(request_id)
+        # self.request_events.pop(request_id)
+        # self.request_outputs.pop(request_id)
         
     def init_migrate_pairs(self):
         # 检查worker所部署分层是否重叠
@@ -536,16 +536,20 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             else:
                 return None
 
-        for stage in self.prefill_workers:
-            prefill_worker = stage[0]
-            for stage in self.workers:
-                decode_worker = stage[0]
-                prefill_pc = ray.get(prefill_worker.get_parallel_config.remote())
-                decode_pc = ray.get(decode_worker.get_parallel_config.remote())
-                overlap_res = check_overlap(prefill_pc, decode_pc)
-                if overlap_res:
-                    prefill_bound, decode_bound = overlap_res
-                    self.migration_pairs.append((prefill_worker, decode_worker, prefill_bound, decode_bound))
+        for prefill_workers in self.prefill_workers:
+            migration_pair = []
+            for stage in prefill_workers:
+                prefill_worker = stage[0]
+                for stage in self.workers:
+                    decode_worker = stage[0]
+                    prefill_pc = ray.get(prefill_worker.get_parallel_config.remote())
+                    decode_pc = ray.get(decode_worker.get_parallel_config.remote())
+                    overlap_res = check_overlap(prefill_pc, decode_pc)
+                    if overlap_res:
+                        prefill_bound, decode_bound = overlap_res
+                        migration_pair.append((prefill_worker, decode_worker, prefill_bound, decode_bound))
+            self.migration_pairs.append(migration_pair)
+        
         print(f"\033[1;35m migration_pairs: {self.migration_pairs} \033[0m")
         
     async def _migrate_blocks(
@@ -583,11 +587,12 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             LifetimeEvent(LifetimeEventType.MigrationBegin)
         )
 
+        prefill_idx = migrating_req.prefill_parallel_config.data_parallel_rank
 
         # 仅支持流水线并行，不支持张量并行
         # 重叠分层间进行KVCache传输
         handles = []
-        for prefill_worker, decode_worker, prefill_bound, decode_bound in self.migration_pairs:
+        for prefill_worker, decode_worker, prefill_bound, decode_bound in self.migration_pairs[prefill_idx]:
             remote_prefill_kvcache = prefill_worker.send_kvcache.remote(migrating_req.block_indexes, prefill_bound)
             handle = decode_worker.receive_kvcache.remote(target_block_indexes, decode_bound, remote_prefill_kvcache)
             handles.append(handle)
@@ -601,7 +606,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         )
     
         # Clear the blocks on the prefill engine's side
-        self.clear_migrated_blocks_callback(migrating_req)
+        self.clear_migrated_blocks_callbacks[prefill_idx](migrating_req)
             
     async def _step(self) -> None:
         """
