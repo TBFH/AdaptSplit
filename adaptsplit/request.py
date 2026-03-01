@@ -377,6 +377,9 @@ class BatchedRequests:
 
     def get_is_prefill_stage(self) -> List[bool]:
         return [request.is_prefill_stage() for request in self.requests]
+    
+    def set_requests(self, requests: List[Request]) -> None:
+        self.requests = requests
 
 
 def create_request(

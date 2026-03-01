@@ -6,6 +6,7 @@ from adaptsplit.config import PrefillStageSchedConfig, ParallelConfig
 from adaptsplit.logger import init_logger
 from adaptsplit.request import Request, BatchedRequests, MigratingRequest
 from adaptsplit.block_manager import BlockManager
+from adaptsplit.utils import Policy
 
 logger = init_logger(__name__)
 
@@ -16,8 +17,7 @@ class PrefillStageScheduler(ABC):
     
     It should maintain all the requests in the current systems, and support two basic ops:
         - add_request: Add a newly arrived request into the waiting queue
-        - get_next_batch_and_pop: Get the next batch for the prefill stage, and 
-          pop the requests in the batch from the waiting queue.
+        - get_next_batch: Get the next batch for the prefill stage
     
     This scheduler is much simpler than DecodingStageScheduler since one request
     will only be processed by one prefill stage.      
@@ -38,10 +38,9 @@ class PrefillStageScheduler(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def get_next_batch_and_pop(self) -> BatchedRequests:
+    def get_next_batch(self) -> BatchedRequests:
         """
-        Get a batch of requests for the execution of next iteration and
-        pop the requests in the batch from the waiting queue.
+        Get a batch of requests for the execution of next iteration
         """
         raise NotImplementedError()
 
@@ -59,7 +58,7 @@ class PrefillStageScheduler(ABC):
         """
         raise NotImplementedError()
     
-    def on_finish_requests(self, batch: BatchedRequests) -> None:
+    def on_finish_requests(self, batch: BatchedRequests) -> List[Request]:
         """
         Callback function when a batch of requests finish the prefill stage.
         """
@@ -95,15 +94,21 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         ), f"can not initialize a FCFS scheduler with policy {sched_config.policy}"
         self.sched_config = sched_config
         # If the current batch is full, the requests will be put into the waiting queue.
-        self.waiting_queue = []
-        self.parallel_config: List[Request] = copy.deepcopy(parallel_config)
+        self.waiting_queue: List[Request] = []
+        self.parallel_config = copy.deepcopy(parallel_config)
         self.block_manager = block_manager
         # Requests that finished the prefill stage but are not accepted by the decoding stage.
         self.unaccepted_queue: List[Request] = []
+
+        self.cur_index = -1
+        self.batch_queues = [
+            BatchedRequests() for i in range(parallel_config.pipeline_parallel_size)
+        ]
+
         # The number of on-the-fly (i.e. processing) request blocks
-        # Adds when calling get_next_batch_and_pop()
+        # Adds when calling get_next_batch()
         # Subtracts when calling on_finish_requests()
-        self.num_on_fly_request_block = 0
+        # self.num_on_fly_request_block = 0
 
     def add_request(self, request: Request) -> None:
         """
@@ -123,12 +128,20 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
     def _get_block_needed(self, length: int):
         block_size = self.block_manager.cache_config.block_size
         return (length + block_size - 1) // block_size
+    
+    def _get_last_stage_batch(self) -> BatchedRequests:
+        last_stage_index = (
+            self.cur_index + 1
+        ) % self.parallel_config.pipeline_parallel_size
+        return self.batch_queues[last_stage_index]
             
-    def get_next_batch_and_pop(self) -> BatchedRequests:
+    def get_next_batch(self) -> BatchedRequests:
         """
         Get the next batch for the prefill stage in a FCFS-like manner, and pop them
         """
-        next_batch = BatchedRequests()
+        self.cur_index = (
+            self.cur_index + 1
+        ) % self.parallel_config.pipeline_parallel_size
 
         def _check_add_to_cur_batch(request: Request) -> bool:
             """
@@ -136,57 +149,83 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
             """
             return (
                 # Limit 1. batch size
-                len(next_batch) < self.sched_config.max_batch_size
+                len(self.batch_queues[self.cur_index]) < self.sched_config.max_batch_size
             ) and (
                 # Limit 2. tokens per batch
-                next_batch.get_num_input_tokens()
+                self.batch_queues[self.cur_index].get_num_input_tokens()
                 + request.get_num_input_tokens()
                 <= self.sched_config.max_tokens_per_batch
             ) and (
                 # Limit 3. GPU blocks
                 sum([
-                    self._get_block_needed(len(req.prompt_token_ids))
-                    for req in next_batch.requests + [request]
+                    sum([
+                        self._get_block_needed(len(req.prompt_token_ids) + req.get_output_len())
+                        for req in self.batch_queues[index].requests
+                    ])
+                    for index in range(self.parallel_config.pipeline_parallel_size)
                 ]) +
                 sum([
                     self._get_block_needed(len(req.prompt_token_ids))
                     for req in self.unaccepted_queue
-                ]) +
-                self.num_on_fly_request_block 
+                ]) 
+                # + self.num_on_fly_request_block 
                 <= self.block_manager.max_num_gpu_blocks
             )
     
         while len(self.waiting_queue) > 0:
             request = self.waiting_queue[0]
             if _check_add_to_cur_batch(request):
-                next_batch.add_request(request)
+                self.batch_queues[self.cur_index].add_request(request)
                 self.waiting_queue.pop(0)
             else:
                 break
         
-        self.num_on_fly_request_block += sum([
-            self._get_block_needed(req.get_input_len())
-            for req in next_batch.requests
-        ])
+        # self.num_on_fly_request_block += sum([
+        #     self._get_block_needed(req.get_input_len())
+        #     for req in next_batch.requests
+        # ])
 
-        return next_batch
+        return self.batch_queues[self.cur_index]
 
-    def on_finish_requests(self, batch: BatchedRequests):
-        for request in batch.requests:
-            if not request.is_finished:
+    def on_finish_requests(self, batch: BatchedRequests) -> List[Request]:
+        # for request in batch.requests:
+        #     if not request.is_finished and request.policy == Policy.HPLD:
+        #         self.unaccepted_queue.append(request)
+
+        # Todo1: pop unfinished 'HPLD' requests but not return
+        # Todo2: pop finished requests and return
+        finished_requests, unfinished_requests = [], []
+        for request in self._get_last_stage_batch().requests:
+            if request.is_finished:
+                finished_requests.append(request)
+            elif request.policy == Policy.HPHD:
+                unfinished_requests.append(request)
+            else:
                 self.unaccepted_queue.append(request)
-        
-        self.num_on_fly_request_block -= sum([
-            self._get_block_needed(req.get_input_len())
-            for req in batch.requests
-        ])
+        self._get_last_stage_batch().set_requests(unfinished_requests)
+        return finished_requests
+
+        # self.num_on_fly_request_block -= sum([
+        #     self._get_block_needed(req.get_input_len())
+        #     for req in batch.requests
+        # ])
     
     def on_request_migrated(self, migrated_request: MigratingRequest):
         for i, request in enumerate(self.unaccepted_queue):
             if request.request_id == migrated_request.req.request_id:
                 del self.unaccepted_queue[i]
                 return
-            
+    
+    # Getter functions
+    def get_total_num_requests(self) -> int:
+        return self.get_processing_num_requests() + self.get_num_waiting_requests()
+
+    def get_processing_num_requests(self) -> int:
+        num = 0
+        for batch in self.batch_queues:
+            num = num + len(batch.requests)
+        return num
+    
     def get_num_waiting_requests(self) -> int:
         return len(self.waiting_queue)
 
@@ -197,7 +236,8 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         )
     
     def print_status(self):
-        logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.num_on_fly_request_block} blocks occupied by on-the-fly requests")
+        # logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.num_on_fly_request_block} blocks occupied by on-the-fly requests")
+        logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.get_processing_num_requests()} on-the-fly requests")
 
 def get_prefill_stage_scheduler(
     sched_config: PrefillStageSchedConfig,

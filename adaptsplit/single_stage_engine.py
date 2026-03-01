@@ -20,7 +20,7 @@ from adaptsplit.request import (
     BatchedRequests,
     MigratingRequest
 )
-from adaptsplit.utils import Counter, cudaMemoryIpcHandle, Stage
+from adaptsplit.utils import Counter, cudaMemoryIpcHandle, Stage, Policy
 from adaptsplit.lifetime import LifetimeEvent, LifetimeEventType
 from adaptsplit.tokenizer import get_tokenizer
 from adaptsplit.block_manager import BlockManager
@@ -328,7 +328,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         Note2. Pipeline parallel is not tested yet
         """
         # pick next batch from scheduler
-        batched_requests = self.scheduler.get_next_batch_and_pop()
+        batched_requests = self.scheduler.get_next_batch()
+
         if len(batched_requests) == 0:
             # Two cases may cause len(batched_requests) == 0:
             # 1. No request in the waiting queue
@@ -337,29 +338,29 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
             self.batches_ret_futures.append(None)
             await asyncio.sleep(SLEEP_WHEN_PREFILL_NO_REQUEST)
         else:
-            logger.info(f"(prefill) Forwarding with lengths {[len(request.prompt_token_ids) for request in batched_requests.requests]}")
-            # allocate blocks as needed
-            self.block_manager.allocate_blocks_batched(batched_requests)
+            # logger.info(f"(prefill) Forwarding with lengths {[len(request.prompt_token_ids) for request in batched_requests.requests]}")
             
             # Log down the lifetime event
             for request in batched_requests.requests:
-                self.engine_on_new_lifetime_event_callback(
-                    request.request_id,
-                    LifetimeEvent(LifetimeEventType.PrefillBegin)
-                )
-                
+                if request.is_prefill_stage():
+                    self.engine_on_new_lifetime_event_callback(
+                        request.request_id,
+                        LifetimeEvent(LifetimeEventType.PrefillBegin)
+                    )
+                else:
+                    self.engine_on_new_lifetime_event_callback(
+                        request.request_id,
+                        LifetimeEvent(LifetimeEventType.DecodingBegin),
+                        True
+                    )
+
+            # allocate blocks as needed
+            self.block_manager.allocate_blocks_batched(batched_requests)
+            
             # push the batch into pipeline
             batched_requests.start_one_iteration(time.time())
             self.batches_in_pipeline.append(batched_requests)
-            # remote_calls = self._remote_call_all_workers_async(
-            #     "step",
-            #     batched_requests.get_request_ids(),
-            #     batched_requests.get_input_tokens_batched(),
-            #     batched_requests.get_first_token_indexes(),
-            #     self.block_manager.get_partial_block_table(
-            #         batched_requests.get_request_ids()
-            #     ),
-            # )
+
             remote_call = self.remote_forward_async(
                 batched_requests.get_request_ids(),
                 batched_requests.get_input_tokens_batched(),
@@ -369,8 +370,6 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                 ),
             )
             
-            pp_size = self.parallel_config.pipeline_parallel_size
-            tp_size = self.parallel_config.tensor_parallel_size
             # only the leader of the last stage return valid output, i.e., generated tokens ids
             # self.batches_ret_futures.append(remote_calls[(pp_size - 1) * tp_size])
             self.batches_ret_futures.append(remote_call)
@@ -383,7 +382,6 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                 self.batches_in_pipeline.pop(0)
                 self.batches_ret_futures.pop(0)
             else:
-                # generated_tokens_ids = await self.batches_ret_futures[0]
                 generated_tokens_ids, _ = await self.batches_ret_futures[0]
                     
                 end_time = time.time()
@@ -401,38 +399,49 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                     generated_tokens, generated_tokens_ids, end_time
                 )
                 
-                self.scheduler.on_finish_requests(finished_batch)
-                
                 for request, new_token, new_token_id in zip(
                     finished_batch.requests, generated_tokens, generated_tokens_ids
                 ):
-                    step_output = StepOutput(request, new_token, new_token_id)
-                    self.engine_on_new_lifetime_event_callback(
-                        request.request_id,
-                        LifetimeEvent(LifetimeEventType.PrefillEnd)
-                    )
                     self.engine_on_new_step_output_callback(
                         request.request_id,
-                        step_output
+                        StepOutput(request, new_token, new_token_id)
                     )
+                    if request.policy == Policy.HPLD:
+                        self.engine_on_new_lifetime_event_callback(
+                            request.request_id,
+                            LifetimeEvent(LifetimeEventType.PrefillEnd)
+                        )
+                    if request.policy == Policy.HPHD:
+                        if request.get_output_len() == 1:
+                            self.engine_on_new_lifetime_event_callback(
+                                request.request_id,
+                                LifetimeEvent(LifetimeEventType.PrefillEnd)
+                            )
+                        elif request.is_finished:
+                            self.engine_on_new_lifetime_event_callback(
+                                request.request_id,
+                                LifetimeEvent(LifetimeEventType.DecodingEnd)
+                            )
 
-                # Cannot free blocks now! The decoding stage may still need them!
-
-                self.batches_in_pipeline.pop(0)
-                self.batches_ret_futures.pop(0)
-                
-                # Inform the user that the request has finished the prefill stage
+                # put HPLD requests into the bridge queue if it is not finished
                 for request in finished_batch.requests:
-                    if not request.is_finished:
-                        # Push the request into the bridge queue if it is not finished
+                    if not request.is_finished and request.policy == Policy.HPLD:
                         migrating_req = MigratingRequest(
                             request,
                             self.block_manager.get_block_table(request.request_id),
                             self.parallel_config,
                         )
                         self.bridge_queue.put_nowait(migrating_req) # This won't panic because the queue is unbounded
-                    else:
-                        self._free_request_resources(request.request_id)
+
+                finished_reqs = self.scheduler.on_finish_requests(finished_batch)
+
+                # free blocks for finished requests
+                for req in finished_reqs:
+                    self._free_request_resources(req.request_id)
+
+                self.batches_in_pipeline.pop(0)
+                self.batches_ret_futures.pop(0)
+                
     
     def clear_migrated_blocks_callback(self, migrated_request: MigratingRequest):
         """
@@ -498,7 +507,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         
         # All the batchedrequests that are pushed into the pipeline
         # Note: len(batched_in_pipeline) <= pp_size and batches are appended in FIFO
-        self.batches_in_pipeline = []
+        self.batches_in_pipeline: List[BatchedRequests] = []
         self.batches_ret_futures = []
 
         self.prefill_workers = prefill_workers
@@ -601,9 +610,6 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         and each request needs #pp steps in total to generate one token.
         """
 
-        pp_size = self.parallel_config.pipeline_parallel_size
-        tp_size = self.parallel_config.tensor_parallel_size
-
         # pick next batch from scheduler
         # this may trigger migration if some requests are still at prefill stage
         # this may trigger swap_in if some requests have been swapped out to CPU
@@ -617,11 +623,17 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         else:
             # Log down the lifetime event
             for request in batched_requests.requests:
-                self.engine_on_new_lifetime_event_callback(
-                    request.request_id,
-                    LifetimeEvent(LifetimeEventType.DecodingBegin),
-                    True
-                )
+                if request.is_prefill_stage():
+                    self.engine_on_new_lifetime_event_callback(
+                        request.request_id,
+                        LifetimeEvent(LifetimeEventType.PrefillBegin)
+                    )
+                else:
+                    self.engine_on_new_lifetime_event_callback(
+                        request.request_id,
+                        LifetimeEvent(LifetimeEventType.DecodingBegin),
+                        True
+                    )
                 
             # Allocate blocks as needed
             self.block_manager.allocate_blocks_batched(batched_requests)
@@ -634,15 +646,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             # push the batch into pipeline
             batched_requests.start_one_iteration(time.time())
             self.batches_in_pipeline.append(batched_requests)
-            # remote_calls = self._remote_call_all_workers_async(
-            #     "step",
-            #     batched_requests.get_request_ids(),
-            #     batched_requests.get_input_tokens_batched(),
-            #     batched_requests.get_first_token_indexes(),
-            #     self.block_manager.get_partial_block_table(
-            #         batched_requests.get_request_ids()
-            #     ),
-            # )
+
             remote_call = self.remote_forward_async(
                 batched_requests.get_request_ids(),
                 batched_requests.get_input_tokens_batched(),
@@ -655,9 +659,6 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             # self.batches_ret_futures.append(remote_calls[(pp_size - 1) * tp_size])
             self.batches_ret_futures.append(remote_call)
 
-        # output buffer
-        finished_reqs = []
-
         if len(self.batches_in_pipeline) == self.parallel_config.pipeline_parallel_size:
             # if the pipeline is full, block until the earliest batch returns
             # if pipeline parallelism is not used, i.e., pp = 1, this should always be true
@@ -665,8 +666,8 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                 self.batches_in_pipeline.pop(0)
                 self.batches_ret_futures.pop(0)
             else:
-                # generated_tokens_ids = await self.batches_ret_futures[0]
                 generated_tokens_ids, _ = await self.batches_ret_futures[0]
+                
                 end_time = time.time()
                 generated_tokens = []
                 for gen_token_id in generated_tokens_ids:
@@ -689,11 +690,23 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                         request.request_id,
                         StepOutput(request, new_token, new_token_id)
                     )
-                    if request.is_finished:
+                    if request.policy == Policy.LPLD:
+                        if request.get_output_len() == 1:
+                            self.engine_on_new_lifetime_event_callback(
+                                request.request_id,
+                                LifetimeEvent(LifetimeEventType.PrefillEnd)
+                            )
+                        elif request.is_finished:
+                            self.engine_on_new_lifetime_event_callback(
+                                request.request_id,
+                                LifetimeEvent(LifetimeEventType.DecodingEnd)
+                            )
+                    if request.policy == Policy.HPLD and request.is_finished:
                         self.engine_on_new_lifetime_event_callback(
                             request.request_id,
                             LifetimeEvent(LifetimeEventType.DecodingEnd)
                         )
+                
                 finished_reqs = self.scheduler.pop_finished_requests()
 
                 # free blocks for finished requests

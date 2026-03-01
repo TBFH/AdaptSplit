@@ -58,6 +58,7 @@ class GlobalScheduler:
         # Randomly dispatching
         policy = random.choice(list(Policy))
         request.policy = policy
+        print(f"[Global Scheduler] request_id: {request.request_id} policy: {policy}")
         if policy == Policy.HPHD or policy == Policy.HPLD:
             self.prefill_index = (self.prefill_index + 1) % len(self.prefill_engines)
             self.prefill_engines[self.prefill_index].add_request(request)
