@@ -159,16 +159,16 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
                 # Limit 3. GPU blocks
                 sum([
                     sum([
-                        self._get_block_needed(len(req.prompt_token_ids) + req.get_output_len())
+                        self._get_block_needed(req.get_input_len() + req.get_output_len())
                         for req in self.batch_queues[index].requests
                     ])
                     for index in range(self.parallel_config.pipeline_parallel_size)
-                ]) +
-                sum([
-                    self._get_block_needed(len(req.prompt_token_ids))
+                ]) 
+                + sum([
+                    self._get_block_needed(req.get_input_len())
                     for req in self.unaccepted_queue
                 ]) 
-                # + self.num_on_fly_request_block 
+                + self._get_block_needed(request.get_input_len())
                 <= self.block_manager.max_num_gpu_blocks
             )
     
@@ -179,11 +179,6 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
                 self.waiting_queue.pop(0)
             else:
                 break
-        
-        # self.num_on_fly_request_block += sum([
-        #     self._get_block_needed(req.get_input_len())
-        #     for req in next_batch.requests
-        # ])
 
         return self.batch_queues[self.cur_index]
 
@@ -204,11 +199,6 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
                 self.unaccepted_queue.append(request)
         self._get_last_stage_batch().set_requests(unfinished_requests)
         return finished_requests
-
-        # self.num_on_fly_request_block -= sum([
-        #     self._get_block_needed(req.get_input_len())
-        #     for req in batch.requests
-        # ])
     
     def on_request_migrated(self, migrated_request: MigratingRequest):
         for i, request in enumerate(self.unaccepted_queue):
@@ -236,8 +226,7 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         )
     
     def print_status(self):
-        # logger.info(f"(prefill) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.num_on_fly_request_block} blocks occupied by on-the-fly requests")
-        logger.info(f"(prefill-{self.parallel_config.data_parallel_rank}) {len(self.waiting_queue)} waiting, {len(self.unaccepted_queue)} finished but unaccepted, {self.get_processing_num_requests()} on-the-fly requests")
+        logger.info(f"(prefill-{self.parallel_config.data_parallel_rank}) requests: {len(self.waiting_queue)} waiting, {self.get_processing_num_requests()} on-the-fly, {len(self.unaccepted_queue)} unaccepted")
 
 def get_prefill_stage_scheduler(
     sched_config: PrefillStageSchedConfig,

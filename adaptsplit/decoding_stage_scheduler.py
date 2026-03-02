@@ -9,6 +9,7 @@ from adaptsplit.logger import init_logger
 from adaptsplit.request import Request, BatchedRequests, MigratingRequest
 from adaptsplit.profiling import ProfilingDatabase
 from adaptsplit.block_manager import BlockManager, BlockLocation
+from adaptsplit.utils import Policy
 
 logger = init_logger(__name__)
 
@@ -138,15 +139,17 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         ) and (
             sum([
                 sum([
-                    self._get_block_needed(len(req.prompt_token_ids) + req.get_output_len())
+                    self._get_block_needed(req.get_input_len() + req.get_output_len())
                     for req in self.batch_queues[index].requests
                 ])
                 for index in range(self.parallel_config.pipeline_parallel_size)
-            ]) + sum([
-                self._get_block_needed(len(req.prompt_token_ids))
-                for req in self.waiting_queue
-            ]) + self._get_block_needed(request.get_input_len() + request.get_output_len()) \
-                <= self.block_manager.max_num_gpu_blocks
+            ]) 
+            + sum([
+                self._get_block_needed(req.get_input_len() + req.get_output_len())
+                for req in self.waiting_queue if req.policy == Policy.HPLD and req.request_id != request.request_id
+            ]) 
+            + self._get_block_needed(request.get_input_len() + request.get_output_len())
+            <= self.block_manager.max_num_gpu_blocks
         )
     
     # Add Prefill Requests
@@ -191,39 +194,29 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
 
         # Check whether the blocks on GPU is enough for the next batch.
         # If not, swap out the last request
-        while sum([
-            sum([
-                self._get_block_needed(req.get_input_len() + req.get_output_len())
-                for req in self.batch_queues[index].requests
-            ])
-            for index in range(self.parallel_config.pipeline_parallel_size)
-        ]) + sum([
-            self._get_block_needed(req.get_input_len())
-            for req in self.waiting_queue
-        ]) > self.block_manager.max_num_gpu_blocks:
-            logger.info("No enough GPU blocks. Swap-out triggered")
-            request = self.batch_queues[self.cur_index].requests.pop(-1)
-            self.swapped_queue.append(request)
-            self.block_manager.swap_out_requests([request])
+        # while sum([
+        #     sum([
+        #         self._get_block_needed(req.get_input_len() + req.get_output_len())
+        #         for req in self.batch_queues[index].requests
+        #     ])
+        #     for index in range(self.parallel_config.pipeline_parallel_size)
+        # ]) + sum([
+        #     self._get_block_needed(req.get_input_len())
+        #     for req in self.waiting_queue
+        # ]) > self.block_manager.max_num_gpu_blocks:
+        #     logger.info("No enough GPU blocks. Swap-out triggered")
+        #     request = self.batch_queues[self.cur_index].requests.pop(-1)
+        #     self.swapped_queue.append(request)
+        #     self.block_manager.swap_out_requests([request])
 
         # Try to add in some new requests. Consider requests in the swapped queue first.
-        while len(self.swapped_queue) > 0 or len(self.waiting_queue) > 0:
-            if len(self.swapped_queue) > 0:
-                request = self.swapped_queue[0]
-                if self._check_add_to_cur_batch(request):
-                    logger.info("Swap-in triggered")
-                    self.block_manager.swap_in_requests([request])
-                    self.batch_queues[self.cur_index].add_request(request)
-                    self.swapped_queue.pop(0)
-                else:
-                    break
+        while len(self.waiting_queue) > 0:
+            request = self.waiting_queue[0]
+            if self._check_add_to_cur_batch(request):
+                self.batch_queues[self.cur_index].add_request(request)
+                self.waiting_queue.pop(0)
             else:
-                request = self.waiting_queue[0]
-                if self._check_add_to_cur_batch(request):
-                    self.batch_queues[self.cur_index].add_request(request)
-                    self.waiting_queue.pop(0)
-                else:
-                    break
+                break
         return self.batch_queues[self.cur_index]
 
     # Getter functions
@@ -246,12 +239,12 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         )
     
     def print_status(self) -> None:
-        logger.info(f"(decoding) {len(self.unaccepted_queue)} unaccepted, {len(self.waiting_queue)} waiting, {self.get_processing_num_requests()} processing")
+        logger.info(f"(decoding) requests: {len(self.unaccepted_queue)} unaccepted, {len(self.waiting_queue)} waiting, {self.get_processing_num_requests()} processing")
 
     async def post_process(self) -> None:
         def should_accept(migrating_req: MigratingRequest) -> bool:
             return sum([self._get_block_needed(len(req.prompt_token_ids))
-                        for req in self.waiting_queue
+                        for req in self.waiting_queue if req.policy == Policy.HPLD
                     ]) < self.block_manager.max_num_gpu_blocks * self.sched_config.waiting_block_prop_threshold \
                     and self._get_block_needed(len(migrating_req.req.prompt_token_ids)) <= self.block_manager.get_num_avail_gpu_blocks()
         while len(self.unaccepted_queue) > 0:

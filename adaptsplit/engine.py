@@ -118,7 +118,8 @@ class LLMEngine:
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
         prefill_devices: Optional[List[str]] = None,
-        decoding_devices: Optional[List[str]] = None
+        decoding_devices: Optional[List[str]] = None,
+        global_schedule_policy: str = 'default'
     ):
         # pipeline_distribution definition
         if len(disagg_parallel_config.prefill.pipeline_distribution) == 0:
@@ -185,7 +186,8 @@ class LLMEngine:
                     [prefill_deployment[i]],
                     self._on_new_step_output_callback,
                     self._on_new_lifetime_event_callback,
-                    self.device_map
+                    self.device_map,
+                    self._on_request_fail_callback
                 )
             )
         
@@ -201,7 +203,9 @@ class LLMEngine:
             self._on_new_step_output_callback,
             self._on_new_lifetime_event_callback,
             [engine.workers for engine in self.prefill_engines],
-            self.device_map
+            self.device_map,
+            [engine.add_request for engine in self.prefill_engines],
+            self._on_request_fail_callback
         )
         
         # request_id -> list of StepOutput
@@ -215,10 +219,13 @@ class LLMEngine:
         # TODO: clear this automatically to avoid memory leak
         self.request_lifetime_events: Dict[int, List[LifetimeEvent]] = {}
 
+        self.failed_requests: List[int] = []
+
         # Initialize global scheduler
         self.global_scheduler = GlobalScheduler(
             prefill_engines=self.prefill_engines,
-            decoding_engine=self.decoding_engine
+            decoding_engine=self.decoding_engine,
+            global_schedule_policy=global_schedule_policy
         )
         
         self.engine_initialized = False
@@ -300,12 +307,20 @@ class LLMEngine:
         Called by self.prefill_engine or self.decoding_engine when a new lifetime event
         is generated
         """
+        def dup_check(event: LifetimeEvent) -> bool:
+            for e in self.request_lifetime_events[request_id]:
+                if e.event_type == event.event_type:
+                    return True
+            return False
+        
         # if dont_add_if_dup == True and self.request_lifetime_events[request_id][-1].event_type == event.event_type, don't add it
-        if dont_add_if_dup and \
-            len(self.request_lifetime_events[request_id]) > 0 and \
-                self.request_lifetime_events[request_id][-1].event_type == event.event_type:
+        if dont_add_if_dup and len(self.request_lifetime_events[request_id]) > 0 and dup_check(event):
             return
         self.request_lifetime_events[request_id].append(event)
+
+    def _on_request_fail_callback(self, request_id: int):
+        self.failed_requests.append(request_id)
+        print(f"Num failed requests: {len(set(self.failed_requests))}")
         
     async def initialize(self):
         prefill_init_tasks = []

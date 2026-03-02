@@ -198,6 +198,8 @@ class Request:
         self.priority = priority
         self.policy = policy
 
+        self.prefill_idx = None
+
     def get_priority(self) -> int:
         return self.priority
     
@@ -434,6 +436,7 @@ class MigratingRequest:
         prefill_parallel_config: ParallelConfig,
     ):
         self.req = req
+        self.req.prefill_idx = prefill_parallel_config.data_parallel_rank
         self.block_indexes = block_indexes
         self.prefill_parallel_config = prefill_parallel_config
         

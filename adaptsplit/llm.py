@@ -38,7 +38,8 @@ class OfflineLLM:
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
         prefill_devices: List[str] = None,
-        decoding_devices: List[str] = None
+        decoding_devices: List[str] = None,
+        global_schedule_policy: str = 'default'
     ):
         self.engine = LLMEngine(
             model_config,
@@ -47,7 +48,8 @@ class OfflineLLM:
             prefill_sched_config,
             decoding_sched_config,
             prefill_devices,
-            decoding_devices
+            decoding_devices,
+            global_schedule_policy
         )
         
         asyncio.run(self.engine.initialize())

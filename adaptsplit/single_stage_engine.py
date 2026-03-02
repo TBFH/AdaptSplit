@@ -91,6 +91,7 @@ class SingleStageLLMEngine(ABC):
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],   # The LLMEngine's callback function when a new StepOutput of a particular request is generated
         engine_on_new_lifetime_event_callback: Optional[Callable[[int, LifetimeEvent, bool], None]] = None,   # The LLMEngine's callback function when a new LifetimeEvent of a particular request is generated
         device_map: Dict[str, str] = None,
+        engine_on_request_fail_callback: Optional[Callable[[int], None]] = None
     ):
         self.stage = stage
         self.model_config = model_config
@@ -99,6 +100,7 @@ class SingleStageLLMEngine(ABC):
         self.sched_config = sched_config
         self.engine_on_new_step_output_callback = engine_on_new_step_output_callback
         self.engine_on_new_lifetime_event_callback = engine_on_new_lifetime_event_callback
+        self.engine_on_request_fail_callback = engine_on_request_fail_callback
 
         self.tokenizer = get_tokenizer(
             model_config.tokenizer,
@@ -291,7 +293,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         deployment,
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
-        device_map: Dict[str, str]
+        device_map: Dict[str, str],
+        engine_on_request_fail_callback: Callable[[int], None]
     ):
         super().__init__(
             Stage.PREFILL,
@@ -302,7 +305,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
             deployment,
             engine_on_new_step_output_callback,
             engine_on_new_lifetime_event_callback,
-            device_map
+            device_map,
+            engine_on_request_fail_callback
         )
         
         # All the batchedrequests that are pushed into the pipeline
@@ -355,7 +359,18 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                     )
 
             # allocate blocks as needed
-            self.block_manager.allocate_blocks_batched(batched_requests)
+            failed_reqs = self.block_manager.allocate_blocks_batched(batched_requests)
+            if len(failed_reqs) > 0:
+                # 失败请求重新加入等待队列等待处理
+                for req in failed_reqs:
+                    req.prompt = req.prompt + ' ' + ' '.join(req.generated_tokens)
+                    req.prompt_token_ids += req.generated_token_ids
+                    req.generated_tokens = []
+                    req.generated_token_ids = []
+                    req.is_finished = False
+                    req.is_running = False
+                    self.scheduler.add_request(req)
+                    self.engine_on_request_fail_callback(req.request_id)    # 记录失败请求
             
             # push the batch into pipeline
             batched_requests.start_one_iteration(time.time())
@@ -385,14 +400,24 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                 generated_tokens_ids, _ = await self.batches_ret_futures[0]
                     
                 end_time = time.time()
-                generated_tokens = []
-                for gen_token_id in generated_tokens_ids:
-                    try:
-                        token = self.tokenizer.decode(gen_token_id)
-                    except Exception as e:
-                        print(f"(prefill) Warning: Cannot decode token with id {gen_token_id}. Error: {e}")
-                        token = ""
-                    generated_tokens.append(token)
+                # LLaMA: add a space to the front for token begins with SPIECE_UNDERLINE("▁")
+                if (self.model_config.hf_config.model_type == "llama"):
+                    SPIECE_UNDERLINE = "▁"
+                    if generated_tokens_ids != [] and (max(generated_tokens_ids) > self.model_config.hf_config.vocab_size or min(generated_tokens_ids) < 0):
+                        print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
+                        generated_tokens_ids = [max(0, min(x, self.model_config.hf_config.vocab_size - 1)) for x in generated_tokens_ids]
+                    _tokenlist = self.tokenizer.convert_ids_to_tokens(generated_tokens_ids)
+                    generated_tokens = []
+                    for _token in _tokenlist:
+                        newstr = self.tokenizer.convert_tokens_to_string([_token,])
+                        if (_token.startswith(SPIECE_UNDERLINE)):
+                            newstr = " " + newstr
+                        generated_tokens.append(newstr)
+                else:
+                    generated_tokens = [
+                        self.tokenizer.decode(gen_token_id, skip_special_tokens=True)
+                        for gen_token_id in generated_tokens_ids
+                    ]
 
                 finished_batch = self.batches_in_pipeline[0]
                 finished_batch.finish_one_iteration(
@@ -464,6 +489,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         await asyncio.gather(event_loop1(), event_loop2())
         
     def print_engine_status(self):
+        self.block_manager.print_block_usage()
         self.scheduler.print_status()
         
 
@@ -488,7 +514,9 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
         prefill_workers: List[List[List[ParaWorker]]],
-        device_map: Dict[str, str]
+        device_map: Dict[str, str],
+        reset_request_callbacks: List[Callable[[Request], None]],
+        engine_on_request_fail_callback: Callable[[int], None]
     ):
         super().__init__(
             Stage.DECODING,
@@ -499,11 +527,13 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             deployment,
             engine_on_new_step_output_callback,
             engine_on_new_lifetime_event_callback,
-            device_map
+            device_map,
+            engine_on_request_fail_callback
         )
         
         self.bridge_queue = bridge_queue
         self.clear_migrated_blocks_callbacks = clear_migrated_blocks_callbacks
+        self.reset_request_callbacks = reset_request_callbacks
         
         # All the batchedrequests that are pushed into the pipeline
         # Note: len(batched_in_pipeline) <= pp_size and batches are appended in FIFO
@@ -641,7 +671,22 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                     )
                 
             # Allocate blocks as needed
-            self.block_manager.allocate_blocks_batched(batched_requests)
+            failed_reqs = self.block_manager.allocate_blocks_batched(batched_requests)
+            if len(failed_reqs) > 0:
+                # 失败请求重新加入等待队列等待处理
+                for req in failed_reqs:
+                    req.prompt = req.prompt + ' ' + ' '.join(req.generated_tokens)
+                    req.prompt_token_ids += req.generated_token_ids
+                    req.generated_tokens = []
+                    req.generated_token_ids = []
+                    req.is_finished = False
+                    req.is_running = False
+                    if req.policy == Policy.HPLD and self.stage == Stage.DECODING:
+                        assert req.prefill_idx is not None, "req.prefill_idx should not be None"
+                        self.reset_request_callbacks[req.prefill_idx](req)
+                    else:
+                        self.scheduler.add_request(req)
+                    self.engine_on_request_fail_callback(req.request_id)    # 记录失败请求
 
             # Check if all requests are on GPU (i.e. not swapped out)
             assert self.block_manager.is_all_requests_on_gpu(
@@ -674,14 +719,24 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                 generated_tokens_ids, _ = await self.batches_ret_futures[0]
                 
                 end_time = time.time()
-                generated_tokens = []
-                for gen_token_id in generated_tokens_ids:
-                    try:
-                        token = self.tokenizer.decode(gen_token_id)
-                    except Exception as e:
-                        print(f"(decoding) Warning: Cannot decode token with id {gen_token_id}. Error: {e}")
-                        token = ""
-                    generated_tokens.append(token)
+                # LLaMA: add a space to the front for token begins with SPIECE_UNDERLINE("▁")
+                if (self.model_config.hf_config.model_type == "llama"):
+                    SPIECE_UNDERLINE = "▁"
+                    if generated_tokens_ids != [] and (max(generated_tokens_ids) > self.model_config.hf_config.vocab_size or min(generated_tokens_ids) < 0):
+                        print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
+                        generated_tokens_ids = [max(0, min(x, self.model_config.hf_config.vocab_size - 1)) for x in generated_tokens_ids]
+                    _tokenlist = self.tokenizer.convert_ids_to_tokens(generated_tokens_ids)
+                    generated_tokens = []
+                    for _token in _tokenlist:
+                        newstr = self.tokenizer.convert_tokens_to_string([_token,])
+                        if (_token.startswith(SPIECE_UNDERLINE)):
+                            newstr = " " + newstr
+                        generated_tokens.append(newstr)
+                else:
+                    generated_tokens = [
+                        self.tokenizer.decode(gen_token_id, skip_special_tokens=True)
+                        for gen_token_id in generated_tokens_ids
+                    ]
 
                 finished_batch = self.batches_in_pipeline[0]
                 finished_batch.finish_one_iteration(

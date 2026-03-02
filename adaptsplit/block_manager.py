@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from adaptsplit.config import ModelConfig, ParallelConfig, CacheConfig
 from adaptsplit.request import Request, BatchedRequests
 from adaptsplit.logger import init_logger
-from adaptsplit.utils import Stage
+from adaptsplit.utils import Stage, Policy
 
 logger = init_logger(__name__)
 
@@ -123,7 +123,7 @@ class BlockManager:
         num_blocks_needed = self.get_num_blocks_needed(request)
         return num_blocks_needed - num_blocks_cur
 
-    def allocate_blocks(self, request: Request):
+    def allocate_blocks(self, request: Request) -> bool:
         """Allocate blocks for a request"""
         # Make sure the request is not already allocated or its blocks are on GPU
         assert (
@@ -142,14 +142,47 @@ class BlockManager:
             assert self.request_location[request.request_id] == BlockLocation.GPU
             num_blocks_cur = len(self.block_table[request.request_id])
             if num_blocks_cur < num_blocks_needed:
+                if self.get_num_avail_gpu_blocks() < (num_blocks_needed - num_blocks_cur):
+                    return False
                 self.block_table[request.request_id] += self._get_free_blocks(
                     num_blocks_needed - num_blocks_cur, BlockLocation.GPU
                 )
+        return True
 
-    def allocate_blocks_batched(self, batch_requests: BatchedRequests):
+    def allocate_blocks_batched(self, batch_requests: BatchedRequests) -> List[Request]:
         """Allocate blocks for a batch of requests"""
+        def find_min_req(batch_requests: BatchedRequests):
+            min_length = float('inf')
+            min_req_id = None
+            for req in batch_requests.requests:
+                if req.policy == Policy.LPLD and (req.get_input_len() + req.get_output_len()) < min_length:
+                    min_length = req.get_input_len() + req.get_output_len()
+                    min_req_id = req.request_id
+            return min_req_id
+
+        failed_reqs_ids = []
         for request in batch_requests.requests:
-            self.allocate_blocks(request)
+            if not self.allocate_blocks(request):
+                if request.policy == Policy.HPLD:
+                    min_req_id = find_min_req(batch_requests)
+                    failed_id = min_req_id if min_req_id else request.request_id
+                else:
+                    failed_id = request.request_id
+                failed_reqs_ids.append(failed_id)
+                # print(f'Request [{failed_id}] failed, re-scheduled.')
+                self.free_blocks(failed_id)    # 释放失败请求占用的所有KVCache映射表Block
+        # 将失败请求踢出批次
+        if len(failed_reqs_ids) > 0:
+            failed_reqs, success_reqs = [], []
+            for req in batch_requests.requests:
+                if req.request_id not in failed_reqs_ids:
+                    success_reqs.append(req)
+                else:
+                    failed_reqs.append(req)
+            batch_requests.requests = success_reqs
+            return failed_reqs
+        else:
+            return []
 
     def free_blocks(self, request_id: int):
         """Free blocks for a request"""
@@ -187,16 +220,16 @@ class BlockManager:
         )
 
     def print_block_usage(self):
-        num_cpu_blocks_used = (
-            self.max_num_cpu_blocks
-            - len(self.free_cpu_blocks_list)
-            - len(self.swapping_cpu_blocks_list)
-        )
-        logger.info(
-            f"({self.stage}) CPU blocks: {num_cpu_blocks_used} / {self.max_num_cpu_blocks} "
-            f"({num_cpu_blocks_used / self.max_num_cpu_blocks * 100:.2f}%) "
-            f"used, ({len(self.swapping_cpu_blocks_list)} swapping in)"
-        )
+        # num_cpu_blocks_used = (
+        #     self.max_num_cpu_blocks
+        #     - len(self.free_cpu_blocks_list)
+        #     - len(self.swapping_cpu_blocks_list)
+        # )
+        # logger.info(
+        #     f"({self.stage}) CPU blocks: {num_cpu_blocks_used} / {self.max_num_cpu_blocks} "
+        #     f"({num_cpu_blocks_used / self.max_num_cpu_blocks * 100:.2f}%) "
+        #     f"used, ({len(self.swapping_cpu_blocks_list)} swapping in)"
+        # )
         num_gpu_blocks_used = (
             self.max_num_gpu_blocks
             - len(self.free_gpu_blocks_list)
@@ -204,8 +237,7 @@ class BlockManager:
         )
         logger.info(
             f"({self.stage}) GPU blocks: {num_gpu_blocks_used} / {self.max_num_gpu_blocks} "
-            f"({num_gpu_blocks_used / self.max_num_gpu_blocks * 100:.2f}%) "
-            f"used, ({len(self.swapping_gpu_blocks_list)} swapping out)"
+            f"({num_gpu_blocks_used / self.max_num_gpu_blocks * 100:.2f}%) used"
         )
 
     """The following methods are used for swapping

@@ -1,4 +1,4 @@
-from typing import List, Callable, Tuple
+from typing import List, Callable, Tuple, Optional
 import random
 import asyncio
 
@@ -37,6 +37,7 @@ class GlobalScheduler:
         self,
         prefill_engines: List[PrefillStageLLMEngine],
         decoding_engine: DecodingStageLLMEngine,
+        global_schedule_policy: str = 'default'
     ):
         self.agent = None
         self.request_queue = asyncio.Queue()
@@ -45,6 +46,7 @@ class GlobalScheduler:
         self.decoding_engine = decoding_engine
 
         self.prefill_index = -1
+        self.global_schedule_policy = global_schedule_policy
     
     def add_request(self, request: Request) -> None:
         # Add a request to the scheduler.
@@ -55,8 +57,17 @@ class GlobalScheduler:
         # Let agent decide policy action
         # execute action to send request
 
-        # Randomly dispatching
-        policy = random.choice(list(Policy))
+        if self.global_schedule_policy == 'random':
+            policy = random.choice(list(Policy))
+        elif self.global_schedule_policy == 'hphd':
+            policy = Policy.HPHD
+        elif self.global_schedule_policy == 'hpld':
+            policy = Policy.HPLD
+        elif self.global_schedule_policy == 'lpld':
+            policy = Policy.LPLD
+        else:
+            policy = None
+
         request.policy = policy
         print(f"[Global Scheduler] request_id: {request.request_id} policy: {policy}")
         if policy == Policy.HPHD or policy == Policy.HPLD:
