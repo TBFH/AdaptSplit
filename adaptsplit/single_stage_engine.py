@@ -685,7 +685,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                         assert req.prefill_idx is not None, "req.prefill_idx should not be None"
                         self.reset_request_callbacks[req.prefill_idx](req)
                     else:
-                        self.scheduler.add_request(req)
+                        self.scheduler.add_new_request(req)
                     self.engine_on_request_fail_callback(req.request_id)    # 记录失败请求
 
             # Check if all requests are on GPU (i.e. not swapped out)

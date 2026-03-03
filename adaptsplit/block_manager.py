@@ -236,7 +236,7 @@ class BlockManager:
             - len(self.swapping_gpu_blocks_list)
         )
         logger.info(
-            f"({self.stage}) GPU blocks: {num_gpu_blocks_used} / {self.max_num_gpu_blocks} "
+            f"({'decoding' if self.stage == Stage.DECODING else 'prefill-'+self.parallel_config.data_parallel_rank}) GPU blocks: {num_gpu_blocks_used} / {self.max_num_gpu_blocks} "
             f"({num_gpu_blocks_used / self.max_num_gpu_blocks * 100:.2f}%) used"
         )
 
