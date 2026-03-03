@@ -134,6 +134,8 @@ class BlockManager:
         num_blocks_needed = self.get_num_blocks_needed(request)
         if request.request_id not in self.block_table:
             # This request has not been allocated before
+            if self.get_num_avail_gpu_blocks() < num_blocks_needed:
+                return False
             self.block_table[request.request_id] = self._get_free_blocks(
                 num_blocks_needed, BlockLocation.GPU
             )
@@ -151,25 +153,25 @@ class BlockManager:
 
     def allocate_blocks_batched(self, batch_requests: BatchedRequests) -> List[Request]:
         """Allocate blocks for a batch of requests"""
-        def find_min_req(batch_requests: BatchedRequests):
-            min_length = float('inf')
-            min_req_id = None
-            for req in batch_requests.requests:
-                if req.policy == Policy.LPLD and (req.get_input_len() + req.get_output_len()) < min_length:
-                    min_length = req.get_input_len() + req.get_output_len()
-                    min_req_id = req.request_id
-            return min_req_id
+        # def find_min_req(batch_requests: BatchedRequests):
+        #     min_length = float('inf')
+        #     min_req_id = None
+        #     for req in batch_requests.requests:
+        #         if req.policy == Policy.LPLD and (req.get_input_len() + req.get_output_len()) < min_length:
+        #             min_length = req.get_input_len() + req.get_output_len()
+        #             min_req_id = req.request_id
+        #     return min_req_id
 
         failed_reqs_ids = []
         for request in batch_requests.requests:
             if not self.allocate_blocks(request):
-                if request.policy == Policy.HPLD:
-                    min_req_id = find_min_req(batch_requests)
-                    failed_id = min_req_id if min_req_id else request.request_id
-                else:
-                    failed_id = request.request_id
+                # if request.policy == Policy.HPLD:
+                #     min_req_id = find_min_req(batch_requests)
+                #     failed_id = min_req_id if min_req_id else request.request_id
+                # else:
+                #     failed_id = request.request_id
+                failed_id = request.request_id
                 failed_reqs_ids.append(failed_id)
-                # print(f'Request [{failed_id}] failed, re-scheduled.')
                 self.free_blocks(failed_id)    # 释放失败请求占用的所有KVCache映射表Block
         # 将失败请求踢出批次
         if len(failed_reqs_ids) > 0:
@@ -236,7 +238,7 @@ class BlockManager:
             - len(self.swapping_gpu_blocks_list)
         )
         logger.info(
-            f"({'decoding' if self.stage == Stage.DECODING else 'prefill-'+self.parallel_config.data_parallel_rank}) GPU blocks: {num_gpu_blocks_used} / {self.max_num_gpu_blocks} "
+            f"({'decoding' if self.stage == Stage.DECODING else f'prefill-{self.parallel_config.data_parallel_rank}'}) GPU blocks: {num_gpu_blocks_used} / {self.max_num_gpu_blocks} "
             f"({num_gpu_blocks_used / self.max_num_gpu_blocks * 100:.2f}%) used"
         )
 

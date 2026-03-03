@@ -318,9 +318,9 @@ class LLMEngine:
             return
         self.request_lifetime_events[request_id].append(event)
 
-    def _on_request_fail_callback(self, request_id: int):
-        self.failed_requests.append(request_id)
-        print(f"Num failed requests: {len(set(self.failed_requests))}")
+    def _on_request_fail_callback(self, request: Request):
+        self.failed_requests.append(request.request_id)
+        print(f"Num failed requests: {len(set(self.failed_requests))}, request.policy: {request.policy}")
         
     async def initialize(self):
         prefill_init_tasks = []

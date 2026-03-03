@@ -91,7 +91,7 @@ class SingleStageLLMEngine(ABC):
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],   # The LLMEngine's callback function when a new StepOutput of a particular request is generated
         engine_on_new_lifetime_event_callback: Optional[Callable[[int, LifetimeEvent, bool], None]] = None,   # The LLMEngine's callback function when a new LifetimeEvent of a particular request is generated
         device_map: Dict[str, str] = None,
-        engine_on_request_fail_callback: Optional[Callable[[int], None]] = None
+        engine_on_request_fail_callback: Optional[Callable[[Request], None]] = None
     ):
         self.stage = stage
         self.model_config = model_config
@@ -294,7 +294,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
         device_map: Dict[str, str],
-        engine_on_request_fail_callback: Callable[[int], None]
+        engine_on_request_fail_callback: Callable[[Request], None]
     ):
         super().__init__(
             Stage.PREFILL,
@@ -363,6 +363,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
             if len(failed_reqs) > 0:
                 # 失败请求重新加入等待队列等待处理
                 for req in failed_reqs:
+                    req.sampling_params.max_tokens = req.sampling_params.max_tokens - len(req.generated_token_ids)
                     req.prompt = req.prompt + ' ' + ' '.join(req.generated_tokens)
                     req.prompt_token_ids += req.generated_token_ids
                     req.generated_tokens = []
@@ -370,7 +371,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                     req.is_finished = False
                     req.is_running = False
                     self.scheduler.add_request(req)
-                    self.engine_on_request_fail_callback(req.request_id)    # 记录失败请求
+                    self.engine_on_request_fail_callback(req)    # 记录失败请求
             
             # push the batch into pipeline
             batched_requests.start_one_iteration(time.time())
@@ -516,7 +517,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         prefill_workers: List[List[List[ParaWorker]]],
         device_map: Dict[str, str],
         reset_request_callbacks: List[Callable[[Request], None]],
-        engine_on_request_fail_callback: Callable[[int], None]
+        engine_on_request_fail_callback: Callable[[Request], None]
     ):
         super().__init__(
             Stage.DECODING,
@@ -675,6 +676,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             if len(failed_reqs) > 0:
                 # 失败请求重新加入等待队列等待处理
                 for req in failed_reqs:
+                    req.sampling_params.max_tokens = req.sampling_params.max_tokens - len(req.generated_token_ids)
                     req.prompt = req.prompt + ' ' + ' '.join(req.generated_tokens)
                     req.prompt_token_ids += req.generated_token_ids
                     req.generated_tokens = []
@@ -686,7 +688,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                         self.reset_request_callbacks[req.prefill_idx](req)
                     else:
                         self.scheduler.add_new_request(req)
-                    self.engine_on_request_fail_callback(req.request_id)    # 记录失败请求
+                    self.engine_on_request_fail_callback(req)    # 记录失败请求
 
             # Check if all requests are on GPU (i.e. not swapped out)
             assert self.block_manager.is_all_requests_on_gpu(

@@ -246,7 +246,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             return sum([self._get_block_needed(len(req.prompt_token_ids))
                         for req in self.waiting_queue if req.policy == Policy.HPLD
                     ]) < self.block_manager.max_num_gpu_blocks * self.sched_config.waiting_block_prop_threshold \
-                    and self._get_block_needed(len(migrating_req.req.prompt_token_ids)) <= self.block_manager.get_num_avail_gpu_blocks()
+                    and self._get_block_needed(len(migrating_req.req.prompt_token_ids) + migrating_req.req.get_output_len()) <= self.block_manager.get_num_avail_gpu_blocks()
         while len(self.unaccepted_queue) > 0:
             migrating_req = self.unaccepted_queue[0]
             if should_accept(migrating_req):

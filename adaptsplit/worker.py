@@ -244,8 +244,7 @@ class ParaWorker:
         # return num_gpu_blocks, num_cpu_blocks
         return {
             'node_id': ray.get_runtime_context().get_node_id(),
-            # 'num_gpu_blocks': num_gpu_blocks,
-            'num_gpu_blocks': 40,
+            'num_gpu_blocks': num_gpu_blocks,
             'num_cpu_blocks': num_cpu_blocks,
             'available_vram': available_gpu_memory,
             'model_vram': peak_runtime_memory,

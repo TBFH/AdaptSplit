@@ -47,6 +47,8 @@ class GlobalScheduler:
 
         self.prefill_index = -1
         self.global_schedule_policy = global_schedule_policy
+
+        self.seed = 0
     
     def add_request(self, request: Request) -> None:
         # Add a request to the scheduler.
@@ -58,6 +60,8 @@ class GlobalScheduler:
         # execute action to send request
 
         if self.global_schedule_policy == 'random':
+            self.seed += 1
+            random.seed(self.seed)
             policy = random.choice(list(Policy))
         elif self.global_schedule_policy == 'hphd':
             policy = Policy.HPHD
