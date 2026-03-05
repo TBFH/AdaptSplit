@@ -457,11 +457,13 @@ class LLMEngine:
 
         assert self.engine_initialized, "Engine not initialized. Please call engine.initialize() before generating."
         request_tasks = []
-        for _ in len(self.prefill_engines):
+        for _ in range(len(self.prefill_engines)):
             request_tasks.append(asyncio.create_task(warmup_task(Policy.HPHD)))
             request_tasks.append(asyncio.create_task(warmup_task(Policy.HPLD)))
         request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
         await asyncio.gather(*request_tasks)
+        print("Done Warming Up Engine.")
+        await asyncio.sleep(1)
 
         
 def add_engine_cli_args(parser: argparse.ArgumentParser):

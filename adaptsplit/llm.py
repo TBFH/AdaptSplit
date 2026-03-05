@@ -54,10 +54,6 @@ class OfflineLLM:
         
         asyncio.run(self.engine.initialize())
 
-        self.event_loop_task = asyncio.create_task(self.engine.start_all_event_loops())
-        # Warming Up
-        asyncio.run(self.engine.warmup())
-
     def generate(
         self,
         prompts: Optional[Union[List[str], str]] = None,
@@ -96,19 +92,18 @@ class OfflineLLM:
             return step_outputs
         
         async def generate_main() -> List[List[StepOutput]]:
+            event_loop_task = asyncio.create_task(self.engine.start_all_event_loops())
+            await self.engine.warmup()
+
             request_tasks = []
             for i in range(num_requests):
                 request_tasks.append(asyncio.create_task(deal_with_request_coroutine(i)))
-            # event_loop_task = asyncio.create_task(self.engine.start_all_event_loops())
             result = await asyncio.gather(*request_tasks)
-            # event_loop_task.cancel()
+
+            event_loop_task.cancel()
             return result
 
         return asyncio.run(generate_main())
-    
-    def shutdown(self):
-        self.event_loop_task.cancel()
-        print("Engine has been shutdown.")
     
 
 class AsyncLLM:
