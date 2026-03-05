@@ -392,6 +392,7 @@ def create_request(
     tokenizer,
     arrival_time: Optional[float] = None,
     request_id: Optional[int] = None,
+    policy: Optional[Policy] = None
 ) -> Request:
     if request_id is None:
         request_id = next(request_counter)
@@ -409,6 +410,7 @@ def create_request(
         prompt,
         prompt_token_ids,
         sampling_params,
+        policy=policy
     )
 
 

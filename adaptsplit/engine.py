@@ -24,7 +24,7 @@ from adaptsplit.request import (
     create_request,
 )
 from adaptsplit.tokenizer import get_tokenizer
-from adaptsplit.utils import Counter
+from adaptsplit.utils import Counter, Policy
 from adaptsplit.single_stage_engine import (
     StepOutput,
     PrefillStageLLMEngine,
@@ -427,6 +427,42 @@ class LLMEngine:
         for engine in self.prefill_engines:
             engine.abort_request(request_id)
         self.decoding_engine.abort_request(request_id)
+
+    async def warmup(self):
+        async def warmup_task(policy: Policy):
+            req = create_request(
+                None,
+                [10],
+                SamplingParams(max_tokens=2, ignore_eos=True),
+                self.request_counter,
+                self.tokenizer,
+                None,
+                None,
+                policy
+            )
+            self.request_outputs[req.request_id] = asyncio.Queue()
+            self.request_lifetime_events[req.request_id] = []
+            self.global_scheduler.add_request(req)
+            while True:
+                try:
+                    step_output = await self.request_outputs[req.request_id].get()
+                except asyncio.CancelledError:
+                    return
+                except GeneratorExit:
+                    return
+                if step_output.is_finished:
+                    break
+            del self.request_outputs[req.request_id]
+            del self.request_lifetime_events[req.request_id]
+
+        assert self.engine_initialized, "Engine not initialized. Please call engine.initialize() before generating."
+        request_tasks = []
+        for _ in len(self.prefill_engines):
+            request_tasks.append(asyncio.create_task(warmup_task(Policy.HPHD)))
+            request_tasks.append(asyncio.create_task(warmup_task(Policy.HPLD)))
+        request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
+        await asyncio.gather(*request_tasks)
+
         
 def add_engine_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument("--model", type=str, required=True)

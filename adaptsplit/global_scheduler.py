@@ -59,28 +59,29 @@ class GlobalScheduler:
         # Let agent decide policy action
         # execute action to send request
 
-        if self.global_schedule_policy == 'random':
-            self.seed += 1
-            random.seed(self.seed)
-            policy = random.choice(list(Policy))
-        elif self.global_schedule_policy == 'hphd':
-            policy = Policy.HPHD
-        elif self.global_schedule_policy == 'hpld':
-            policy = Policy.HPLD
-        elif self.global_schedule_policy == 'lpld':
-            policy = Policy.LPLD
-        else:
-            policy = None
+        if not request.policy:
+            if self.global_schedule_policy == 'random':
+                self.seed += 1
+                random.seed(self.seed)
+                policy = random.choice(list(Policy))
+            elif self.global_schedule_policy == 'hphd':
+                policy = Policy.HPHD
+            elif self.global_schedule_policy == 'hpld':
+                policy = Policy.HPLD
+            elif self.global_schedule_policy == 'lpld':
+                policy = Policy.LPLD
+            else:
+                policy = None   # agent decide
+            request.policy = policy
 
-        request.policy = policy
-        print(f"[Global Scheduler] request_id: {request.request_id} policy: {policy}")
-        if policy == Policy.HPHD or policy == Policy.HPLD:
+        print(f"[Global Scheduler] request_id: {request.request_id} policy: {request.policy}")
+        if request.policy == Policy.HPHD or request.policy == Policy.HPLD:
             self.prefill_index = (self.prefill_index + 1) % len(self.prefill_engines)
             self.prefill_engines[self.prefill_index].add_request(request)
-        elif policy == Policy.LPLD:
+        elif request.policy == Policy.LPLD:
             self.decoding_engine.add_new_request(request)
         else:
-            raise ValueError(f"Policy {policy} is not supported.")
+            raise ValueError(f"Policy {request.policy} is not supported.")
 
     async def start_event_loop(self):
         while True:
