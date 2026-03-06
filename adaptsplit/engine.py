@@ -15,7 +15,8 @@ from adaptsplit.config import (
     ParallelConfig, 
     CacheConfig, 
     PrefillStageSchedConfig,
-    DecodingStageSchedConfig
+    DecodingStageSchedConfig,
+    ExtraConfig
 )
 from adaptsplit.logger import init_logger
 from adaptsplit.request import (
@@ -117,6 +118,7 @@ class LLMEngine:
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
+        extra_configs: ExtraConfig,
         prefill_devices: Optional[List[str]] = None,
         decoding_devices: Optional[List[str]] = None,
         global_schedule_policy: str = 'default'
@@ -134,6 +136,7 @@ class LLMEngine:
         self.cache_config = cache_config
         self.prefill_sched_config = prefill_sched_config
         self.decoding_sched_config = decoding_sched_config
+        self.extra_configs = extra_configs
 
         self.request_counter = Counter()
         self.tokenizer = get_tokenizer(
@@ -183,6 +186,7 @@ class LLMEngine:
                     parallel_config,
                     cache_config,
                     prefill_sched_config,
+                    extra_configs,
                     [prefill_deployment[i]],
                     self._on_new_step_output_callback,
                     self._on_new_lifetime_event_callback,
@@ -198,6 +202,7 @@ class LLMEngine:
             disagg_parallel_config.decoding,
             cache_config,
             decoding_sched_config,
+            extra_configs,
             decoding_deployment,
             [engine.clear_migrated_blocks_callback for engine in self.prefill_engines],
             self._on_new_step_output_callback,

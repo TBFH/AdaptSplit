@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
 import copy
 from typing import List, Callable, Tuple
+from tqdm import tqdm
 
-from adaptsplit.config import PrefillStageSchedConfig, ParallelConfig
+from adaptsplit.config import PrefillStageSchedConfig, ParallelConfig, ExtraConfig
 from adaptsplit.logger import init_logger
 from adaptsplit.request import Request, BatchedRequests, MigratingRequest
 from adaptsplit.block_manager import BlockManager
@@ -58,6 +59,13 @@ class PrefillStageScheduler(ABC):
         """
         raise NotImplementedError()
     
+    @abstractmethod
+    def update_pbar(self) -> None:
+        """
+        Show the progress bar of the scheduler.
+        """
+        raise NotImplementedError()
+    
     def on_finish_requests(self, batch: BatchedRequests) -> List[Request]:
         """
         Callback function when a batch of requests finish the prefill stage.
@@ -87,8 +95,9 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         self,
         sched_config: PrefillStageSchedConfig, 
         parallel_config: ParallelConfig,
-        block_manager: BlockManager):
-        
+        block_manager: BlockManager,
+        extra_configs: ExtraConfig
+    ):
         assert (
             sched_config.policy == "fcfs"
         ), f"can not initialize a FCFS scheduler with policy {sched_config.policy}"
@@ -96,6 +105,7 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         # If the current batch is full, the requests will be put into the waiting queue.
         self.waiting_queue: List[Request] = []
         self.parallel_config = copy.deepcopy(parallel_config)
+        self.extra_configs = copy.deepcopy(extra_configs)
         self.block_manager = block_manager
         # Requests that finished the prefill stage but are not accepted by the decoding stage.
         self.unaccepted_queue: List[Request] = []
@@ -109,6 +119,60 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
         # Adds when calling get_next_batch()
         # Subtracts when calling on_finish_requests()
         # self.num_on_fly_request_block = 0
+
+        if extra_configs.sched_bar:
+            self.pbar_dict = []
+            self.waiting_q_bar = None
+            self.unaccepted_q_bar = None
+            self.init_pbars()
+
+    def init_pbars(self):
+        position_ref = self.parallel_config.data_parallel_rank * 3
+        # Waiting Queue
+        self.waiting_q_bar = tqdm(
+            total=999,
+            desc=f'[Prefill-{self.parallel_config.data_parallel_rank}] Waiting_Queue',
+            bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
+            position=position_ref,
+            leave=True,
+            ncols=100
+        )
+        # 初始化进度条：固定格式，默认颜色
+        self.pbar = tqdm(
+            total=self.sched_config.max_batch_size,
+            desc=f'[Prefill-{self.parallel_config.data_parallel_rank}] Batch_Queue',     # 进度条左侧显示对象名称
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+            position=position_ref+1,   # 固定位置，避免刷屏
+            leave=True,         # 运行结束后保留进度条
+            ncols=100
+        )
+        # Unaccepted Queue
+        self.unaccepted_q_bar = tqdm(
+            total=999,
+            desc=f'[Prefill-{self.parallel_config.data_parallel_rank}] Unaccepted_Queue', 
+            bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
+            position=position_ref+2,
+            leave=True,
+            ncols=100
+        )
+
+    def update_pbar(self):
+        COLOR_CODES = {
+            'green': '\033[92m',
+            'reset': '\033[0m',
+        }
+        # 更新队列信息
+        self.waiting_q_bar.n = len(self.waiting_queue)
+        self.waiting_q_bar.refresh()
+        self.unaccepted_q_bar.n = len(self.unaccepted_queue)
+        self.unaccepted_q_bar.refresh()
+        # 更新各批次占用率
+        batch = self.batch_queues[0]
+        tokens_to_cal = batch.get_num_input_tokens()
+        self.pbar.n = len(batch)
+        bar_format = f'{COLOR_CODES["reset"]}{{l_bar}}{COLOR_CODES["green"]}{{bar}}{COLOR_CODES["reset"]}| {{n_fmt}}/{{total_fmt}} [num_tokens: {tokens_to_cal}]'
+        self.pbar.bar_format = bar_format
+        self.pbar.refresh()
 
     def add_request(self, request: Request) -> None:
         """
@@ -231,10 +295,11 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
 def get_prefill_stage_scheduler(
     sched_config: PrefillStageSchedConfig,
     parallel_config: ParallelConfig,
-    block_manager: BlockManager
+    block_manager: BlockManager,
+    extra_configs: ExtraConfig
 ) -> PrefillStageScheduler:
     if sched_config.policy == "fcfs":
-        return PrefillStageFCFSScheduler(sched_config, parallel_config, block_manager)
+        return PrefillStageFCFSScheduler(sched_config, parallel_config, block_manager, extra_configs)
     else:
         raise NotImplementedError(f"Unknown prefill scheduler policy {sched_config.policy}")
     

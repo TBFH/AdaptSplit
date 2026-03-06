@@ -14,6 +14,7 @@ from adaptsplit.config import (
     ModelConfig,
     ParallelConfig,
     CacheConfig,
+    ExtraConfig
 )
 from adaptsplit.request import (
     Request, 
@@ -87,6 +88,7 @@ class SingleStageLLMEngine(ABC):
         parallel_config: ParallelConfig,
         cache_config: CacheConfig,
         sched_config: PrefillStageSchedConfig | DecodingStageSchedConfig,
+        extra_configs: ExtraConfig,
         deployment,
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],   # The LLMEngine's callback function when a new StepOutput of a particular request is generated
         engine_on_new_lifetime_event_callback: Optional[Callable[[int, LifetimeEvent, bool], None]] = None,   # The LLMEngine's callback function when a new LifetimeEvent of a particular request is generated
@@ -98,6 +100,7 @@ class SingleStageLLMEngine(ABC):
         self.parallel_config = parallel_config
         self.cache_config = cache_config
         self.sched_config = sched_config
+        self.extra_configs = extra_configs
         self.engine_on_new_step_output_callback = engine_on_new_step_output_callback
         self.engine_on_new_lifetime_event_callback = engine_on_new_lifetime_event_callback
         self.engine_on_request_fail_callback = engine_on_request_fail_callback
@@ -280,7 +283,8 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         return get_prefill_stage_scheduler(
             self.sched_config,
             self.parallel_config,
-            self.block_manager
+            self.block_manager,
+            self.extra_configs
         )
     
     def __init__(
@@ -290,6 +294,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         parallel_config: ParallelConfig,
         cache_config: CacheConfig,
         sched_config: PrefillStageSchedConfig,
+        extra_configs: ExtraConfig,
         deployment,
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
         engine_on_new_lifetime_event_callback: Callable[[int, LifetimeEvent, bool], None],
@@ -302,6 +307,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
             parallel_config,
             cache_config,
             sched_config,
+            extra_configs,
             deployment,
             engine_on_new_step_output_callback,
             engine_on_new_lifetime_event_callback,
@@ -490,9 +496,11 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
         await asyncio.gather(event_loop1(), event_loop2())
         
     def print_engine_status(self):
-        self.block_manager.print_block_usage()
-        self.scheduler.print_status()
-        
+        if self.extra_configs.print_log:
+            self.block_manager.print_block_usage()
+            self.scheduler.print_status()
+        if self.extra_configs.sched_bar:
+            self.scheduler.update_pbar()
 
 class DecodingStageLLMEngine(SingleStageLLMEngine):
     def _get_scheduler(self) -> DecodingStageScheduler:
@@ -500,7 +508,8 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             self.sched_config,
             self.parallel_config,
             self.block_manager,
-            self._migrate_blocks
+            self._migrate_blocks,
+            self.extra_configs
         )
         
     def __init__(
@@ -510,6 +519,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         parallel_config: ParallelConfig,
         cache_config: CacheConfig,
         sched_config: DecodingStageSchedConfig,
+        extra_configs: ExtraConfig,
         deployment,
         clear_migrated_blocks_callbacks: List[Callable[[Request], None]],
         engine_on_new_step_output_callback: Callable[[int, StepOutput], None],
@@ -525,6 +535,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
             parallel_config,
             cache_config,
             sched_config,
+            extra_configs,
             deployment,
             engine_on_new_step_output_callback,
             engine_on_new_lifetime_event_callback,
@@ -807,6 +818,9 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
         await asyncio.gather(event_loop1(), event_loop2(), event_loop3())
     
     def print_engine_status(self):
-        self.block_manager.print_block_usage()
-        self.scheduler.print_status()
+        if self.extra_configs.print_log:
+            self.block_manager.print_block_usage()
+            self.scheduler.print_status()
+        if self.extra_configs.sched_bar:
+            self.scheduler.update_pbar()
         

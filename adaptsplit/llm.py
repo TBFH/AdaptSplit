@@ -11,7 +11,8 @@ from adaptsplit.config import (
     CacheConfig,
     DisaggParallelConfig,
     PrefillStageSchedConfig,
-    DecodingStageSchedConfig
+    DecodingStageSchedConfig,
+    ExtraConfig
 )
 from adaptsplit.single_stage_engine import StepOutput
 from adaptsplit.engine import LLMEngine
@@ -37,9 +38,10 @@ class OfflineLLM:
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
         decoding_sched_config: DecodingStageSchedConfig,
-        prefill_devices: List[str] = None,
-        decoding_devices: List[str] = None,
-        global_schedule_policy: str = 'default'
+        extra_configs: ExtraConfig,
+        prefill_devices: Optional[List[str]] = None,
+        decoding_devices: Optional[List[str]] = None,
+        global_schedule_policy: str = 'default',
     ):
         self.engine = LLMEngine(
             model_config,
@@ -47,11 +49,12 @@ class OfflineLLM:
             cache_config,
             prefill_sched_config,
             decoding_sched_config,
+            extra_configs,
             prefill_devices,
             decoding_devices,
             global_schedule_policy
         )
-        
+        self.extra_configs = extra_configs
         asyncio.run(self.engine.initialize())
 
     def generate(
@@ -82,6 +85,9 @@ class OfflineLLM:
                 len(sampling_params) == num_requests
             ), f"prompts should pair with the list of sampling parameters, \
                  but got {num_requests} prompts and {len(sampling_params)} sampling parameters"
+            
+        if self.extra_configs.req_pbar:
+            pbar = tqdm(total=num_requests, desc="Processed prompts")
 
         async def deal_with_request_coroutine(req_index: int) -> List[StepOutput]:
             prompt = prompts[req_index] if prompts is not None else None
@@ -89,6 +95,8 @@ class OfflineLLM:
             step_outputs = []
             async for step_output in self.engine.generate(prompt, token_ids, sampling_params[req_index]):
                 step_outputs.append(step_output)
+            if self.extra_configs.req_pbar:
+                pbar.update(1)
             return step_outputs
         
         async def generate_main() -> List[List[StepOutput]]:
@@ -101,6 +109,8 @@ class OfflineLLM:
             result = await asyncio.gather(*request_tasks)
 
             event_loop_task.cancel()
+            if self.extra_configs.req_pbar:
+                pbar.close()
             return result
 
         return asyncio.run(generate_main())

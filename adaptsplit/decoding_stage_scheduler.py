@@ -3,8 +3,9 @@ import copy
 from typing import List, Callable, Tuple
 import warnings
 import torch
+from tqdm import tqdm
 
-from adaptsplit.config import ParallelConfig, DecodingStageSchedConfig
+from adaptsplit.config import ParallelConfig, DecodingStageSchedConfig, ExtraConfig
 from adaptsplit.logger import init_logger
 from adaptsplit.request import Request, BatchedRequests, MigratingRequest
 from adaptsplit.profiling import ProfilingDatabase
@@ -82,6 +83,13 @@ class DecodingStageScheduler(ABC):
         """
         raise NotImplementedError()
     
+    @abstractmethod
+    def update_pbar(self) -> None:
+        """
+        Show the progress bar of the scheduler.
+        """
+        raise NotImplementedError()
+    
     async def post_process(self) -> None:
         """
         Post process after each iteration.
@@ -103,6 +111,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         parallel_config: ParallelConfig,
         block_manager: BlockManager,
         engine_migrate_block_callback: Callable,
+        extra_configs: ExtraConfig
     ):
         assert (
             sched_config.policy == "fcfs"
@@ -122,8 +131,68 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             BatchedRequests() for i in range(parallel_config.pipeline_parallel_size)
         ]
         self.parallel_config = copy.deepcopy(parallel_config)
+        self.extra_configs = copy.deepcopy(extra_configs)
         self.block_manager = block_manager
         self.engine_migrate_block_callback = engine_migrate_block_callback
+
+        if extra_configs.sched_bar:
+            self.unaccepted_q_bar = None
+            self.waiting_q_bar = None
+            self.pbar_dict = []
+            self.init_pbars()
+
+    def init_pbars(self):
+        # Unaccepted Queue
+        self.unaccepted_q_bar = tqdm(
+            total=999,
+            desc=f'[Decoding] Unaccepted_Queue', 
+            bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
+            position=6,
+            leave=True,
+            ncols=100
+        )
+        # Waiting Queue
+        self.waiting_q_bar = tqdm(
+            total=999,
+            desc=f'[Decoding] Waiting_Queue',
+            bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
+            position=7,
+            leave=True,
+            ncols=100
+        )
+        for i in range(len(self.batch_queues)):
+            # 初始化进度条：固定格式，默认颜色
+            pbar = tqdm(
+                total=self.sched_config.max_batch_size,
+                desc=f'[Decoding] Batch_Queue[{i}]',                           # 进度条左侧显示对象名称
+                bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
+                position=8+i,   # 固定位置，避免刷屏
+                leave=True,         # 运行结束后保留进度条
+                ncols=100
+            )
+            self.pbar_dict.append(pbar)
+
+    def update_pbar(self):
+        COLOR_CODES = {
+            'green': '\033[92m',
+            'reset': '\033[0m',
+        }
+        # 更新队列信息
+        self.unaccepted_q_bar.n = len(self.unaccepted_queue)
+        self.unaccepted_q_bar.refresh()
+        self.waiting_q_bar.n = len(self.waiting_queue)
+        self.waiting_q_bar.refresh()
+        # 更新各批次占用率
+        for idx, batch in enumerate(self.batch_queues):
+            tokens_to_cal = batch.get_num_input_tokens()
+            num_req = len(batch)
+            self.pbar_dict[idx].n = num_req
+            if idx == self.cur_index:
+                bar_format = f'{COLOR_CODES["reset"]}{{l_bar}}{COLOR_CODES["green"]}{{bar}}{COLOR_CODES["reset"]}| {{n_fmt}}/{{total_fmt}} [num_tokens: {tokens_to_cal}]'
+            else:
+                bar_format = f'{{l_bar}}{{bar}}| {{n_fmt}}/{{total_fmt}} [num_tokens: {tokens_to_cal}]'
+            self.pbar_dict[idx].bar_format = bar_format
+            self.pbar_dict[idx].refresh()
 
     def _get_block_needed(self, length: int):
         block_size = self.block_manager.cache_config.block_size
@@ -261,9 +330,10 @@ def get_decoding_stage_scheduler(
     parallel_config: ParallelConfig,
     block_manager: BlockManager,
     engine_migrate_block_callback: Callable,
+    extra_configs: ExtraConfig
 ) -> DecodingStageScheduler:
     if sched_config.policy == "fcfs":
-        return DecodingStageFCFSScheduler(sched_config, parallel_config, block_manager, engine_migrate_block_callback)
+        return DecodingStageFCFSScheduler(sched_config, parallel_config, block_manager, engine_migrate_block_callback, extra_configs)
     else:
         raise NotImplementedError(
             f"scheduler policy {sched_config.policy} is not supported"

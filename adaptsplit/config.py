@@ -143,7 +143,7 @@ class DecodingStageSchedConfig:
         max_batch_size: int,
         max_tokens_per_batch: int,
         model_name: str = None,
-        waiting_block_prop_threshold: float = 0.05
+        waiting_block_prop_threshold: float = 0.5
     ):
         assert policy in [
             "fcfs",
@@ -323,3 +323,32 @@ class ModelConfig:
             + 5 * self.get_num_layers(parallel_config) * self.get_hidden_size()  # bias
         ) 
         return total_params * self.get_dtype_size()
+
+
+class ExtraConfig:
+    """Configuration for the extra settings.
+
+    Args:
+        print_log: Whether to print status event loop.
+        sched_bar: Whether to show scheduler bar.
+        req_pbar: Whether to show request progress bar.
+        pp_gantte: Whether to save and draw pipeline-parallel gantte.
+        pp_gantte_dir: Path to save figures if pp_gantte is enable.
+        prebenchmark: Whether to save prebenchmarking data.
+    """
+
+    def __init__(
+        self,
+        print_log: bool = False,
+        sched_bar: bool = False,
+        req_pbar: bool = False,
+        pp_gantte: bool = False,
+        pp_gantte_dir: Optional[str] = None,
+        prebenchmark: bool = False
+    ):
+        self.print_log = print_log
+        self.sched_bar = sched_bar
+        self.req_pbar = req_pbar
+        self.pp_gantte = pp_gantte
+        self.pp_gantte_dir = None if not pp_gantte else pp_gantte_dir
+        self.prebenchmark = prebenchmark
