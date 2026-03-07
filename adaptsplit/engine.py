@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple, Dict, AsyncGenerator
 import asyncio
 import math
 import argparse
-
+import requests
 import ray
 from ray.util.placement_group import PlacementGroup
 from ray.util.scheduling_strategies import NodeAffinitySchedulingStrategy
@@ -37,10 +37,10 @@ from adaptsplit.global_scheduler import GlobalScheduler
 logger = init_logger(__name__)
 
 # 配置相关环境变量，防止通信问题导致的程序卡死
-import os
-os.environ['NCCL_P2P_DISABLE'] = '1'
-os.environ['NCCL_IB_DISABLE'] = '1'
-os.environ['NCCL_SOCKET_IFNAME'] = 'eno4'
+# import os
+# os.environ['NCCL_P2P_DISABLE'] = '1'
+# os.environ['NCCL_IB_DISABLE'] = '1'
+# os.environ['NCCL_SOCKET_IFNAME'] = 'eno4'
 
 
 @ray.remote(num_gpus=1)
@@ -433,12 +433,52 @@ class LLMEngine:
             engine.abort_request(request_id)
         self.decoding_engine.abort_request(request_id)
 
+    def collect_records(self):
+        # Collecting pp_gantte data
+        try:
+            response = requests.post(f"{self.extra_configs.pptimer_url}/collect", timeout=3)
+            if response.status_code == 200:
+                records = response.json()
+            else:
+                print(f"Collect PP_Gantte Failed, State Code: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"Collect PP_Gantte Failed: {e}")
+            return None
+        # Post-processing pp_gantte data
+        all_records = []
+        for stage_record in records:
+            counter = {}
+            for record in stage_record:
+                rid = record["req_id"]
+                if rid not in counter:
+                    counter[rid] = 1
+                else:
+                    counter[rid] += 1
+                record["desc"] = counter[rid]
+                all_records.append(record)
+        # Save pp_gantte data as csv
+        import csv
+        import os
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        directory = self.extra_configs.records_dir
+        filename = os.path.join(directory, f"pp-records_{timestamp}.csv")
+        if directory and not os.path.exists(directory):
+            os.makedirs(directory, exist_ok=True)
+        fieldnames = list(all_records[0].keys())
+        with open(filename, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(all_records)
+        print(f"PP_Gantte saved to {filename}")
+
     async def warmup(self):
         async def warmup_task(policy: Policy):
             req = create_request(
                 None,
-                [10],
-                SamplingParams(max_tokens=2, ignore_eos=True),
+                [20] * 8,
+                SamplingParams(max_tokens=8, ignore_eos=True),
                 self.request_counter,
                 self.tokenizer,
                 None,
@@ -465,8 +505,15 @@ class LLMEngine:
         for _ in range(len(self.prefill_engines)):
             request_tasks.append(asyncio.create_task(warmup_task(Policy.HPHD)))
             request_tasks.append(asyncio.create_task(warmup_task(Policy.HPLD)))
-        request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
+        for _ in range(self.decoding_sched_config.max_batch_size * len(self.prefill_devices)):
+            request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
         await asyncio.gather(*request_tasks)
+        self.request_counter.reset()
+        if self.extra_configs.enable_records:
+            try:
+                requests.post(f"{self.extra_configs.pptimer_url}/collect", timeout=3)
+            except requests.exceptions.RequestException as e:
+                print(f"Collect PP_Gantte Failed: {e}")
         print("Done Warming Up Engine.")
         await asyncio.sleep(1)
 

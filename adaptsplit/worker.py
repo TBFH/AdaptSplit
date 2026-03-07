@@ -5,12 +5,12 @@ import copy
 import time
 from typing import List, Tuple, Optional
 import socket
-
+import requests
 import ray
 import torch
 import torch.distributed
 
-from adaptsplit.config import ModelConfig, CacheConfig, ParallelConfig
+from adaptsplit.config import ModelConfig, CacheConfig, ParallelConfig, ExtraConfig
 from adaptsplit.request import Request, BatchedRequests
 from adaptsplit.utils import set_random_seed, cudaMemoryIpcHandle, Stage
 from adaptsplit.models import get_model_op
@@ -64,6 +64,7 @@ class ParaWorker:
         stage: Stage,
         model_config: ModelConfig,
         cache_config: CacheConfig,
+        extra_configs: ExtraConfig,
         parallel_config: ParallelConfig = ParallelConfig(),
         tensor_parallel_id: List[int] = None,   # Although the type is list[int], it is actually a NCCL unique ID
         pipeline_parallel_id: List[int] = None, # Same as above
@@ -74,6 +75,7 @@ class ParaWorker:
         self.model_config = model_config
         self.parallel_config = parallel_config
         self.cache_config = cache_config
+        self.extra_configs = extra_configs
         self.tensor_parallel_id = tensor_parallel_id
         self.pipeline_parallel_id = pipeline_parallel_id
         self.gpu_id = ray.get_gpu_ids()[0]
@@ -262,6 +264,15 @@ class ParaWorker:
     ) -> List[int]:
         """Run one step of inference on the batch of requests."""
 
+        # Start pp_gantte timer
+        if self.stage == Stage.DECODING and self.extra_configs.enable_records:
+            self.record(
+                api='start',
+                stage_id=self.parallel_config.pipeline_parallel_rank,
+                req_id=sum(request_ids),
+                desc=0
+            )
+
         start = time.time()
         # Check whether synchronization is necessary
         for request_id in request_ids:
@@ -302,8 +313,34 @@ class ParaWorker:
         self.execution_time += time.time() - start
         # print(f"Worker {self.stage}.#{self.worker_id} Step end")
 
+        # End pp_gantte timer
+        if self.stage == Stage.DECODING and self.extra_configs.enable_records:
+            self.record(
+                api='end',
+                stage_id=self.parallel_config.pipeline_parallel_rank,
+                req_id=sum(request_ids),
+                desc=0
+            )
+
         # return generated_tokens_ids, copy.deepcopy(self.intermed_output)
         return generated_tokens_ids, self.intermed_output.clone()
+    
+    def record(self, api, stage_id, req_id, desc):
+        data = {
+            "stage_id": stage_id,
+            "req_id": req_id,
+            "desc": desc
+        }
+        try:
+            response = requests.post(
+                f"http://pptime-server:8080/{api}",
+                json=data,
+                timeout=3
+            )
+            return response.status_code == 200
+        except requests.exceptions.RequestException as e:
+            print(f"Record Failed: {e}")
+            return False
     
     def send_kvcache(
         self,

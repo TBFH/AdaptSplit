@@ -332,8 +332,9 @@ class ExtraConfig:
         print_log: Whether to print status event loop.
         sched_bar: Whether to show scheduler bar.
         req_pbar: Whether to show request progress bar.
-        pp_gantte: Whether to save and draw pipeline-parallel gantte.
-        pp_gantte_dir: Path to save figures if pp_gantte is enable.
+        enable_records: Whether to save and draw pipeline-parallel gantte.
+        records_dir: Path to save figures if pp_gantte is enable.
+        pptimer_url: Base URL of pp gantte timer server to record timestamp.
         prebenchmark: Whether to save prebenchmarking data.
     """
 
@@ -342,13 +343,21 @@ class ExtraConfig:
         print_log: bool = False,
         sched_bar: bool = False,
         req_pbar: bool = False,
-        pp_gantte: bool = False,
-        pp_gantte_dir: Optional[str] = None,
+        enable_records: bool = False,
+        records_dir: Optional[str] = None,
+        pptimer_url: Optional[str] = None,
         prebenchmark: bool = False
     ):
         self.print_log = print_log
         self.sched_bar = sched_bar
         self.req_pbar = req_pbar
-        self.pp_gantte = pp_gantte
-        self.pp_gantte_dir = None if not pp_gantte else pp_gantte_dir
+
+        self.enable_records = enable_records
+        if enable_records and records_dir == None:
+            raise ValueError("ExtraConfigs.records_dir cannot be None if ExtraConfigs.enable_records is True.")
+        if enable_records and pptimer_url == None:
+            raise ValueError("ExtraConfigs.pptimer_url cannot be None if ExtraConfigs.enable_records is True.")
+        self.records_dir = records_dir
+        self.pptimer_url = pptimer_url
+
         self.prebenchmark = prebenchmark

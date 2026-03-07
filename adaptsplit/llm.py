@@ -115,6 +115,9 @@ class OfflineLLM:
 
         return asyncio.run(generate_main())
     
+    def collect_records(self) -> None:
+        time.sleep(2)
+        self.engine.collect_records()
 
 class AsyncLLM:
     """A Large Language Model (LLM) for online inference."""

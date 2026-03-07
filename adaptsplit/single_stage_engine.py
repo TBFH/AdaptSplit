@@ -177,6 +177,7 @@ class SingleStageLLMEngine(ABC):
                     stage=self.stage,
                     model_config=self.model_config,
                     cache_config=self.cache_config,
+                    extra_configs=self.extra_configs,
                     parallel_config=tmp_parallel_config,
                     pipeline_parallel_id=pp_id,
                     tensor_parallel_id=tp_id,
