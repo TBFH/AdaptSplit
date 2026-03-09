@@ -336,6 +336,9 @@ class ExtraConfig:
         records_dir: Path to save figures if pp_gantte is enable.
         pptimer_url: Base URL of pp gantte timer server to record timestamp.
         prebenchmark: Whether to save prebenchmarking data.
+        pb_profile: Whether to collect prebenchmark profile data.
+        pb_nlayer_thres: num layer threshold for prebenchmarking.
+        pb_max_batchsize: max batch size for prebenchmarking.
     """
 
     def __init__(
@@ -346,7 +349,10 @@ class ExtraConfig:
         enable_records: bool = False,
         records_dir: Optional[str] = None,
         pptimer_url: Optional[str] = None,
-        prebenchmark: bool = False
+        prebenchmark: bool = False,
+        pb_profile: bool = False,
+        pb_nlayer_thres: Optional[int] = None,
+        pb_max_batchsize: Optional[int] = None
     ):
         self.print_log = print_log
         self.sched_bar = sched_bar
@@ -361,3 +367,10 @@ class ExtraConfig:
         self.pptimer_url = pptimer_url
 
         self.prebenchmark = prebenchmark
+        self.pb_profile = pb_profile
+        if pb_profile and not pb_nlayer_thres:
+            raise ValueError("ExtraConfigs.pb_nlayer_thres cannot be None if ExtraConfigs.pb_profile is True.")
+        self.pb_nlayer_thres = pb_nlayer_thres
+        if pb_profile and not pb_max_batchsize:
+            raise ValueError("ExtraConfigs.pb_max_batchsize cannot be None if ExtraConfigs.pb_profile is True.")
+        self.pb_max_batchsize = pb_max_batchsize

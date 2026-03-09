@@ -99,7 +99,7 @@ class ParaWorker:
         self.latest_swap_in_event = None
         self.latest_swap_out_event = None
         # Statistics
-        self.execution_time = 0.0
+        self.execution_time = []
         self.blocked_swapping_time = 0.0
         # Intermediate results buffer for pipeline_parallel
         self.intermed_input = None
@@ -217,7 +217,7 @@ class ParaWorker:
         total_gpu_memory = get_gpu_memory()
         available_gpu_memory = self.init_resources['Free_VRAM'] * (1024 ** 2)
         peak_runtime_memory = (
-            total_gpu_memory * 0.01
+            total_gpu_memory * 0.00001
             + self.model_config.get_model_size_in_bytes(
                 parallel_config=self.parallel_config
             )
@@ -310,7 +310,8 @@ class ParaWorker:
             self.intermed_input,
             self.intermed_output
         )
-        self.execution_time += time.time() - start
+        if self.extra_configs.prebenchmark:
+            self.execution_time.append(time.time() - start)
         # print(f"Worker {self.stage}.#{self.worker_id} Step end")
 
         # End pp_gantte timer
@@ -324,6 +325,11 @@ class ParaWorker:
 
         # return generated_tokens_ids, copy.deepcopy(self.intermed_output)
         return generated_tokens_ids, self.intermed_output.clone()
+    
+    def get_execution_times(self) -> List[float]:
+        res = copy.deepcopy(self.execution_time)
+        self.execution_time.clear()
+        return res
     
     def record(self, api, stage_id, req_id, desc):
         data = {

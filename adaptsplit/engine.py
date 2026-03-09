@@ -433,6 +433,14 @@ class LLMEngine:
             engine.abort_request(request_id)
         self.decoding_engine.abort_request(request_id)
 
+    def collect_prebenchmark_profiles(self) -> List[List[str]]:
+        return self.decoding_engine.prebenchmark_profiles
+
+    def collect_exec_times(self) -> List[List[float]]:
+        # for engine in self.prefill_engines:
+        #     engine.collect_exec_times()
+        return self.decoding_engine.collect_exec_times()
+
     def collect_records(self):
         # Collecting pp_gantte data
         try:
@@ -509,6 +517,10 @@ class LLMEngine:
             request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
         await asyncio.gather(*request_tasks)
         self.request_counter.reset()
+        if self.extra_configs.prebenchmark:
+            for engine in self.prefill_engines:
+                engine.collect_exec_times()
+            self.decoding_engine.collect_exec_times()
         if self.extra_configs.enable_records:
             try:
                 requests.post(f"{self.extra_configs.pptimer_url}/collect", timeout=3)

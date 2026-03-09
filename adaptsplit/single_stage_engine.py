@@ -117,6 +117,7 @@ class SingleStageLLMEngine(ABC):
         self.workers = []
 
         self.device_map = device_map
+        self.prebenchmark_profiles = None
     
     async def initialize(self):
         """Initialize workers, load models and initialize k/v cache
@@ -126,6 +127,10 @@ class SingleStageLLMEngine(ABC):
         """
         logger.info(f"Initializing {self.stage.name} workers")
         await self._init_workers()
+
+        if self.extra_configs.pb_profile and self.stage == Stage.DECODING:
+            logger.info(f"Prebenchmark profiling.")
+            self.prebenchmark_profiles = self._prebenchmark_profile()
         
         logger.info(f"Initializing {self.stage.name} models")
         await self._init_model()
@@ -148,6 +153,54 @@ class SingleStageLLMEngine(ABC):
         logger.info(f"Scheduler: {self.scheduler}")
         logger.info(f"Block manager: {self.block_manager}")
 
+    def _prebenchmark_profile(self) -> List[List[str]]:
+        def get_block_size_in_bytes(num_layers: int, pp_size: int) -> float:
+            num_heads = self.model_config.get_num_heads()
+            head_dim = self.model_config.get_head_size()
+            key_cache_size = num_layers * num_heads * self.cache_config.block_size * head_dim
+            dtype_size = self.model_config.get_dtype_size()
+            single_block_size = key_cache_size * 2 * dtype_size
+            max_batchsize = self.extra_configs.pb_max_batchsize
+            return single_block_size * max_batchsize * pp_size
+        
+        tmp_pc = ParallelConfig(pipeline_parallel_size=self.model_config.hf_config.num_hidden_layers)
+        single_layer_size_in_bytes = self.model_config.get_model_size_in_bytes(tmp_pc)
+
+        available_vram_maps = {}
+        futures = self._remote_call_all_workers_async(
+            "_profile_num_available_blocks",
+            self.cache_config.block_size,
+            self.cache_config.gpu_memory_utilization,
+            self.cache_config.cpu_swap_space,
+        )
+        for future in futures:
+            result = ray.get(future)
+            node_name = self.device_map[result['node_id']]
+            available_vram = result['available_vram']
+            available_vram_maps[node_name] = available_vram * self.cache_config.gpu_memory_utilization
+        
+        pp_size = len(available_vram_maps)
+        nlayer_thres = self.extra_configs.pb_nlayer_thres
+        res = []
+        for nlayer in range(1, nlayer_thres + 1):
+            if len(available_vram_maps) == 0:
+                break
+            sub_res = []
+            out_nodes = []
+            for node, avail_vram in available_vram_maps.items():
+                space_for_layer = avail_vram - get_block_size_in_bytes(nlayer, pp_size)
+                space_layer_need = single_layer_size_in_bytes * nlayer
+                if space_for_layer > space_layer_need:
+                    sub_res.append(node)
+                else:
+                    out_nodes.append(node)
+            if len(sub_res) > 0:
+                res.append(sub_res)
+            if len(out_nodes) > 0:
+                for node in out_nodes:
+                    del available_vram_maps[node]
+                    pp_size -= 1
+        return res
 
     async def _init_workers(self):
         """
@@ -257,6 +310,14 @@ class SingleStageLLMEngine(ABC):
             for worker in stage:
                 intermed = worker.step.remote(*args, intermed)
         return intermed
+
+    def collect_exec_times(self) -> List[List[float]]:
+        res = []
+        futures = self._remote_call_all_workers_async("get_execution_times")
+        for fut in futures:
+            reslut = ray.get(fut)
+            res.append(reslut)
+        return res
 
     def abort_request(self, request_id: int):
         """
