@@ -1,0 +1,58 @@
+[
+  {
+    "model": "opt-1.3b",
+    "device": "jetson-16g-2",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/uneven_partitioning/checkpoints/opt-1.3b-jetson-16g-2.pt",
+    "mae_latency_ms": 0.5512582659721375,
+    "mae_power_W": 0.07885531336069107,
+    "rmse_latency_ms": 0.8290262818336487,
+    "rmse_power_W": 0.0988401398062706,
+    "mape_latency_percent": 2.6019057258963585,
+    "mape_power_percent": 1.1285814456641674,
+    "best_epoch": 103,
+    "best_loss": 0.015821462497115135,
+    "num_samples": 48
+  },
+  {
+    "model": "opt-1.3b",
+    "device": "jetson-16g-8",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/uneven_partitioning/checkpoints/opt-1.3b-jetson-16g-8.pt",
+    "mae_latency_ms": 0.4361586272716522,
+    "mae_power_W": 0.0891641303896904,
+    "rmse_latency_ms": 0.6406407356262207,
+    "rmse_power_W": 0.11738016456365585,
+    "mape_latency_percent": 2.3949146270751953,
+    "mape_power_percent": 1.2794683687388897,
+    "best_epoch": 170,
+    "best_loss": 0.01815338432788849,
+    "num_samples": 48
+  },
+  {
+    "model": "opt-1.3b",
+    "device": "jetson-64g-4",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/uneven_partitioning/checkpoints/opt-1.3b-jetson-64g-4.pt",
+    "mae_latency_ms": 0.2678130567073822,
+    "mae_power_W": 0.12698742747306824,
+    "rmse_latency_ms": 0.4090309143066406,
+    "rmse_power_W": 0.16365261375904083,
+    "mape_latency_percent": 2.6249801740050316,
+    "mape_power_percent": 1.4606956392526627,
+    "best_epoch": 203,
+    "best_loss": 0.014777431264519691,
+    "num_samples": 48
+  },
+  {
+    "model": "opt-1.3b",
+    "device": "jetson-8g-1",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/uneven_partitioning/checkpoints/opt-1.3b-jetson-8g-1.pt",
+    "mae_latency_ms": 1.4483860731124878,
+    "mae_power_W": 0.0953664481639862,
+    "rmse_latency_ms": 2.0010950565338135,
+    "rmse_power_W": 0.13364186882972717,
+    "mape_latency_percent": 3.7886839359998703,
+    "mape_power_percent": 1.5000092796981335,
+    "best_epoch": 405,
+    "best_loss": 0.03532257676124573,
+    "num_samples": 48
+  }
+]
