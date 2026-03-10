@@ -1,5 +1,4 @@
 from typing import Dict, List, Optional, Tuple
-import time
 import csv
 import os
 from datetime import datetime
@@ -105,7 +104,7 @@ class PipelineSimulator:
 
 
 if __name__ == "__main__":
-    from pipeline_predictor import PredictorBundle, load_predictor
+    from partitioning.pipeline_predictor import PredictorBundle, load_predictor
 
     model = "Llama-2-7b-chat-hf"
     devices = ['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-8g-1']

@@ -13,7 +13,7 @@ import argparse
 import time
 from typing import List, Dict
 
-from util import profile_power, RainbowLogger, JsonHelper
+from partitioning.utils import profile_power, RainbowLogger, JsonHelper
 
 logger = None
 json_helper = None

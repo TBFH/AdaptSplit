@@ -34,14 +34,16 @@ from adaptsplit.single_stage_engine import (
 from adaptsplit.lifetime import LifetimeEvent, LifetimeEventType
 from adaptsplit.global_scheduler import GlobalScheduler
 
+from partitioning.uneven_partition import search_optimal_partition
+
 logger = init_logger(__name__)
 
 # 配置相关环境变量，防止通信问题导致的程序卡死
-# import os
+import os
 # os.environ['NCCL_P2P_DISABLE'] = '1'
 # os.environ['NCCL_IB_DISABLE'] = '1'
 # os.environ['NCCL_SOCKET_IFNAME'] = 'eno4'
-# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 
 @ray.remote(num_gpus=1)
@@ -128,12 +130,11 @@ class LLMEngine:
         if len(disagg_parallel_config.prefill.pipeline_distribution) == 0:
             pp_size = disagg_parallel_config.prefill.pipeline_parallel_size
             disagg_parallel_config.prefill.pipeline_distribution = [model_config.get_num_layers() // pp_size] * pp_size
-        if len(disagg_parallel_config.decoding.pipeline_distribution) == 0:
-            pp_size = disagg_parallel_config.decoding.pipeline_parallel_size
-            disagg_parallel_config.decoding.pipeline_distribution = [model_config.get_num_layers() // pp_size] * pp_size
+        # if len(disagg_parallel_config.decoding.pipeline_distribution) == 0:
+        #     pp_size = disagg_parallel_config.decoding.pipeline_parallel_size
+        #     disagg_parallel_config.decoding.pipeline_distribution = [model_config.get_num_layers() // pp_size] * pp_size
 
         self.model_config = model_config
-        self.disagg_parallel_config = disagg_parallel_config
         self.cache_config = cache_config
         self.prefill_sched_config = prefill_sched_config
         self.decoding_sched_config = decoding_sched_config
@@ -171,6 +172,19 @@ class LLMEngine:
 
         self.node_resources = {}
         self._init_inspect()
+
+        self.disagg_parallel_config = disagg_parallel_config
+
+        if len(disagg_parallel_config.decoding.pipeline_distribution) == 0:
+            disagg_parallel_config.decoding.pipeline_distribution = search_optimal_partition(
+                model=self.model_config.model.split("/")[-1],
+                devices=decoding_devices,
+                nlayer_range=self._cal_nlayer_range(),
+                total_nlayer=self.model_config.get_num_layers(),
+                max_batch_size_callback=self._max_batch_size_callback
+            )
+
+        self.disagg_parallel_config = disagg_parallel_config
 
         prefill_deployment, decoding_deployment = self._init_deployments()
         print(f"\033[1;34m prefill_deployment: {prefill_deployment} \t\t decoding_deployment: {decoding_deployment} \033[0m")
@@ -236,6 +250,49 @@ class LLMEngine:
         
         self.engine_initialized = False
 
+    def _cal_nlayer_range(
+        self
+    ) -> List[Tuple[int, int]]:
+        tmp_pc = ParallelConfig(pipeline_parallel_size=self.model_config.hf_config.num_hidden_layers)
+        single_layer_size_in_bytes = self.model_config.get_model_size_in_bytes(tmp_pc)
+        device_map_rvt = {v:k for k,v in self.device_map.items()}   # node_name -> node_id
+        ranges = []
+        for device in self.decoding_devices:
+            available_vram_in_bytes = self.node_resources[device_map_rvt[device]]["Total_VRAM"] * (1024 ** 2) * self.cache_config.gpu_memory_utilization
+            ranges.append((1, min(self.model_config.hf_config.num_hidden_layers, int(available_vram_in_bytes // single_layer_size_in_bytes))))
+        return ranges
+
+    def _max_batch_size_callback(
+        self,
+        partition_scheme: List[int],
+        assumed_req_len: int = 256
+    ) -> int:
+        def get_block_size_in_bytes(num_layers: int) -> float:
+            num_heads = self.model_config.get_num_heads()
+            head_dim = self.model_config.get_head_size()
+            key_cache_size = num_layers * num_heads * self.cache_config.block_size * head_dim
+            dtype_size = self.model_config.get_dtype_size()
+            return key_cache_size * 2 * dtype_size
+        
+        tmp_pc = ParallelConfig(pipeline_parallel_size=self.model_config.hf_config.num_hidden_layers)
+        single_layer_size_in_bytes = self.model_config.get_model_size_in_bytes(tmp_pc)
+        device_map_rvt = {v:k for k,v in self.device_map.items()}   # node_name -> node_id
+
+        gpu_blocks = []
+        for idx, device in enumerate(self.decoding_devices):
+            available_vram_in_bytes = self.node_resources[device_map_rvt[device]]["Total_VRAM"] * (1024 ** 2) * self.cache_config.gpu_memory_utilization
+            peak_runtime_memory = single_layer_size_in_bytes * partition_scheme[idx] + available_vram_in_bytes * 0.001
+            block_size_in_bytes = get_block_size_in_bytes(partition_scheme[idx])
+            num_gpu_blocks = int((available_vram_in_bytes - peak_runtime_memory) // block_size_in_bytes)
+            gpu_blocks.append(num_gpu_blocks)
+        
+        num_gpu_blocks = min(gpu_blocks)
+        block_per_req = math.ceil(assumed_req_len / self.cache_config.block_size)
+        max_pipeline_req = num_gpu_blocks // block_per_req
+        max_batch_size = max_pipeline_req // self.disagg_parallel_config.decoding.pipeline_parallel_size
+        return int(max_batch_size)
+
+
     def _init_inspect(self):
         nodes = ray.nodes()
         futures = []
@@ -284,6 +341,7 @@ class LLMEngine:
                     deployment.append(device_map_rvt[node])
                     selected.extend([node, device_map_rvt[node]])
             else:
+                # Todo: Auto division to High-End and Low-End nodes
                 cnt = 0
                 for node_id, res in self.node_resources.items():
                     # if res['Free_VRAM'] > 4096 and 'jetson' in self.device_map[node_id] and node_id not in selected and cnt < parallel_size:
