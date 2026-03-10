@@ -41,6 +41,7 @@ logger = init_logger(__name__)
 # os.environ['NCCL_P2P_DISABLE'] = '1'
 # os.environ['NCCL_IB_DISABLE'] = '1'
 # os.environ['NCCL_SOCKET_IFNAME'] = 'eno4'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 
 
 @ray.remote(num_gpus=1)

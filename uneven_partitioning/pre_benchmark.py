@@ -18,8 +18,8 @@ from util import profile_power, RainbowLogger, JsonHelper
 logger = None
 json_helper = None
 
-MODEL_PATH = "/mnt/Data/austin/hf_models/opt-1.3b"
-# MODEL_PATH = "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
+# MODEL_PATH = "/mnt/Data/austin/hf_models/opt-1.3b"
+MODEL_PATH = "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
 # MODEL_PATH = "/mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct"
 
 def profiling(
@@ -105,7 +105,7 @@ def pre_benchmarks(
                     pipeline_distribution=[num_layer] * len(deployments)
                 )
             ),
-            prefill_devices=['pc-3090'],
+            prefill_devices=['pc-4090'],
             decoding_devices=deployments,
             cache_config=CacheConfig(
                 block_size=16,
@@ -132,7 +132,7 @@ def pre_benchmarks(
         )
         # 准备数据
         text = " ".join(["a" for _ in range(1, n_input_tokens+1)])
-        requests = [(text, n_input_tokens, n_output_tokens) for _ in range(bs*4*50)]
+        requests = [(text, n_input_tokens, n_output_tokens) for _ in range(bs*4*30)]
         # 构造输入
         prompts = []
         sampling_params_list = []
@@ -143,8 +143,9 @@ def pre_benchmarks(
             )
             prompts.append(prompt)
             sampling_params_list.append(sampling_params)
-        # 预热
-        # llm.generate(prompts=prompts, sampling_params=sampling_params_list)
+        # 初始化worker会导致功耗激增，需冷却一会儿，避免影响推理过程的功耗记录
+        print("Preparing for inference ...")
+        time.sleep(30)
         # 测试批大小
         start = time.time()
         llm.generate(prompts=prompts, sampling_params=sampling_params_list)
@@ -209,7 +210,7 @@ if __name__ == '__main__':
     # Prebenchmark Profiling
     profiles = profiling(
         deployments=deployments,
-        max_batch_size=256,
+        max_batch_size=300,
         nlayer_threshold=6,
         args=args
     )

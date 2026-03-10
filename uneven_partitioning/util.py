@@ -226,7 +226,7 @@ def mnserver_query_instant(query):
         base_url,
         headers=headers,
         json=data,
-        timeout=5
+        timeout=30
     )
     # 处理响应
     if response.status_code == 200:
@@ -261,7 +261,7 @@ def mnserver_query_range(query, start, end, step):
         base_url,
         headers=headers,
         json=data,
-        timeout=5
+        timeout=30
     )
     # 处理响应
     if response.status_code == 200:
@@ -293,7 +293,7 @@ def grafana_query_instant(query):
         base_url,
         headers=headers,
         data=data,
-        timeout=5
+        timeout=30
     )
     # 处理响应
     if response.status_code == 200:
@@ -329,7 +329,7 @@ def grafana_query_range(query, start, end, step):
         base_url,
         headers=headers,
         data=data,
-        timeout=5
+        timeout=30
     )
     # 处理响应
     if response.status_code == 200:
