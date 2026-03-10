@@ -5,6 +5,6 @@ setup(
     version="0.0.1",
     author="Tianchi Gu",
     description="Hybrid PD Disaggregated and Co-located inference engine for LLM Serving on Edge.",
-    packages=["adaptsplit"],
+    packages=["adaptsplit", "partitioning"],
     zip_safe=False,
 )

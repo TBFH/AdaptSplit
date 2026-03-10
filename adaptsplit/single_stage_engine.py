@@ -130,6 +130,7 @@ class SingleStageLLMEngine(ABC):
 
         if self.extra_configs.pb_profile and self.stage == Stage.DECODING:
             logger.info(f"Prebenchmark profiling.")
+            await asyncio.sleep(10)
             self.prebenchmark_profiles = self._prebenchmark_profile()
         
         logger.info(f"Initializing {self.stage.name} models")

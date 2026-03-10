@@ -419,6 +419,8 @@ def train_all_predictors(
     grouped = parse_json_records(json_path)
     summaries: List[Dict] = []
 
+    modelname = None
+
     for (model_name, device_name), data in sorted(grouped.items(), key=lambda x: (x[0][0], x[0][1])):
         if only_model is not None and model_name != only_model:
             continue
@@ -462,8 +464,9 @@ def train_all_predictors(
             f"MAE(latency)={summary['mae_latency_ms']:.4f} ms | MAE(power)={summary['mae_power_W']:.4f} W | "
             f"saved={ckpt_path}"
         )
+        modelname = model_name
 
-    summary_path = os.path.join(save_dir, f"training_summary.json")
+    summary_path = os.path.join(save_dir, f"{modelname}-training_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summaries, f, ensure_ascii=False, indent=2)
     print(f"\n训练汇总已保存到: {summary_path}")
