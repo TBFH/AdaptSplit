@@ -62,7 +62,6 @@ class OfflineLLM:
         prompts: Optional[Union[List[str], str]] = None,
         prompt_token_ids: Optional[List[List[int]]] = None,
         sampling_params: Optional[Union[SamplingParams, List[SamplingParams]]] = None,
-        use_tqdm: bool = True,
     ) -> List[List[StepOutput]]:
         if prompts is None and prompt_token_ids is None:
             raise ValueError("prompts or prompt_token_ids must be provided")

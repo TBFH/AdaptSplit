@@ -39,11 +39,11 @@ from partitioning.uneven_partition import search_optimal_partition
 logger = init_logger(__name__)
 
 # 配置相关环境变量，防止通信问题导致的程序卡死
-import os
+# import os
 # os.environ['NCCL_P2P_DISABLE'] = '1'
 # os.environ['NCCL_IB_DISABLE'] = '1'
 # os.environ['NCCL_SOCKET_IFNAME'] = 'eno4'
-os.environ['CUDA_VISIBLE_DEVICES'] = '3'
+# os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 
 @ray.remote(num_gpus=1)

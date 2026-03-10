@@ -4,6 +4,7 @@ from typing import List, Callable, Tuple
 import warnings
 import torch
 from tqdm import tqdm
+import math
 
 from adaptsplit.config import ParallelConfig, DecodingStageSchedConfig, ExtraConfig
 from adaptsplit.logger import init_logger
@@ -14,6 +15,7 @@ from adaptsplit.utils import Policy
 
 logger = init_logger(__name__)
 
+UPDATE_FREQUENCY = 16
 
 class DecodingStageScheduler(ABC):
     """The abstract class for a decoding stage scheduler.
@@ -135,6 +137,10 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         self.block_manager = block_manager
         self.engine_migrate_block_callback = engine_migrate_block_callback
 
+        self.gpu_blocks = block_manager.max_num_gpu_blocks
+        self.req_len_history = []
+        self.sum_finished_req = 0
+
         if extra_configs.sched_bar:
             self.unaccepted_q_bar = None
             self.waiting_q_bar = None
@@ -147,7 +153,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             total=999,
             desc=f'[Decoding] Unaccepted_Queue', 
             bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
-            position=6,
+            # position=0,
             leave=True,
             ncols=100
         )
@@ -156,7 +162,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             total=999,
             desc=f'[Decoding] Waiting_Queue',
             bar_format='{l_bar}{bar}| num_requests: {n_fmt}',
-            position=7,
+            # position=1,
             leave=True,
             ncols=100
         )
@@ -166,7 +172,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
                 total=self.sched_config.max_batch_size,
                 desc=f'[Decoding] Batch_Queue[{i}]',                           # 进度条左侧显示对象名称
                 bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}',
-                position=8+i,   # 固定位置，避免刷屏
+                # position=2+i,   # 固定位置，避免刷屏
                 leave=True,         # 运行结束后保留进度条
                 ncols=100
             )
@@ -194,13 +200,27 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             self.pbar_dict[idx].bar_format = bar_format
             self.pbar_dict[idx].refresh()
 
+    def _update_max_batch_size(self, avg_req_len: int):
+        print(f"\033[92m [decoding_stage_scheduler] avg_req_len: {avg_req_len} \033[0m")
+        avg_block_per_req = avg_req_len / self.block_manager.cache_config.block_size
+        max_req_on_fly = self.gpu_blocks / avg_block_per_req
+        max_safe_batchsize = max_req_on_fly / self.parallel_config.pipeline_parallel_size
+        self.sched_config.max_batch_size = max_safe_batchsize
+        print(f"\033[92m [decoding_stage_scheduler] max_batch_size updated to {self.sched_config.max_batch_size} \033[0m")
+
     def _get_block_needed(self, length: int):
         block_size = self.block_manager.cache_config.block_size
         return (length + block_size - 1) // block_size
         
     def _check_add_to_cur_batch(self, request: Request) -> bool:
+        batch_size_target = math.ceil((
+            sum([len(batch) for batch in self.batch_queues])
+            + len(self.waiting_queue)
+        ) / self.parallel_config.pipeline_parallel_size)
+
         return (
-            len(self.batch_queues[self.cur_index]) < self.sched_config.max_batch_size
+            # len(self.batch_queues[self.cur_index]) < self.sched_config.max_batch_size
+            len(self.batch_queues[self.cur_index]) < min(batch_size_target, self.sched_config.max_batch_size)
         ) and (
             self.batch_queues[self.cur_index].get_num_input_tokens()
             + request.get_num_input_tokens()
@@ -254,7 +274,17 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         return self.batch_queues[last_stage_index]
 
     def pop_finished_requests(self) -> List[Request]:
-        return self._get_last_stage_batch().pop_finished_requests()
+        finished_reqs = self._get_last_stage_batch().pop_finished_requests()
+
+        for req in finished_reqs:
+            self.req_len_history.append(req.get_input_len() + req.get_output_len())
+        self.sum_finished_req += len(finished_reqs)
+        if self.sum_finished_req > UPDATE_FREQUENCY:
+            self.sum_finished_req = self.sum_finished_req % UPDATE_FREQUENCY
+            avg_req_len = int(sum(self.req_len_history) / len(self.req_len_history))
+            self._update_max_batch_size(avg_req_len)
+
+        return finished_reqs
 
     def get_next_batch(self) -> BatchedRequests:
         self.cur_index = (
