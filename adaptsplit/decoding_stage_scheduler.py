@@ -15,7 +15,7 @@ from adaptsplit.utils import Policy
 
 logger = init_logger(__name__)
 
-UPDATE_FREQUENCY = 16
+UPDATE_FREQUENCY = 8
 
 class DecodingStageScheduler(ABC):
     """The abstract class for a decoding stage scheduler.
@@ -140,6 +140,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         self.gpu_blocks = block_manager.max_num_gpu_blocks
         self.req_len_history = []
         self.sum_finished_req = 0
+        self.init_batch_size = self.sched_config.max_batch_size
 
         if extra_configs.sched_bar:
             self.unaccepted_q_bar = None
@@ -205,7 +206,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         avg_block_per_req = avg_req_len / self.block_manager.cache_config.block_size
         max_req_on_fly = self.gpu_blocks / avg_block_per_req
         max_safe_batchsize = max_req_on_fly / self.parallel_config.pipeline_parallel_size
-        self.sched_config.max_batch_size = max_safe_batchsize
+        self.sched_config.max_batch_size = max(max_safe_batchsize, 16)
         print(f"\033[92m [decoding_stage_scheduler] max_batch_size updated to {self.sched_config.max_batch_size} \033[0m")
 
     def _get_block_needed(self, length: int):
@@ -276,13 +277,14 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
     def pop_finished_requests(self) -> List[Request]:
         finished_reqs = self._get_last_stage_batch().pop_finished_requests()
 
-        for req in finished_reqs:
-            self.req_len_history.append(req.get_input_len() + req.get_output_len())
-        self.sum_finished_req += len(finished_reqs)
-        if self.sum_finished_req > UPDATE_FREQUENCY:
-            self.sum_finished_req = self.sum_finished_req % UPDATE_FREQUENCY
-            avg_req_len = int(sum(self.req_len_history) / len(self.req_len_history))
-            self._update_max_batch_size(avg_req_len)
+        if self.extra_configs.auto_batchsize:
+            for req in finished_reqs:
+                self.req_len_history.append(req.get_input_len() + req.get_output_len())
+            self.sum_finished_req += len(finished_reqs)
+            if self.sum_finished_req > UPDATE_FREQUENCY:
+                self.sum_finished_req = self.sum_finished_req % UPDATE_FREQUENCY
+                avg_req_len = int(sum(self.req_len_history) / len(self.req_len_history))
+                self._update_max_batch_size(avg_req_len)
 
         return finished_reqs
 

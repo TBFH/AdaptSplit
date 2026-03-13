@@ -352,7 +352,8 @@ class ExtraConfig:
         prebenchmark: bool = False,
         pb_profile: bool = False,
         pb_nlayer_thres: Optional[int] = None,
-        pb_max_batchsize: Optional[int] = None
+        pb_max_batchsize: Optional[int] = None,
+        auto_batchsize: bool = False
     ):
         self.print_log = print_log
         self.sched_bar = sched_bar
@@ -374,3 +375,5 @@ class ExtraConfig:
         if pb_profile and not pb_max_batchsize:
             raise ValueError("ExtraConfigs.pb_max_batchsize cannot be None if ExtraConfigs.pb_profile is True.")
         self.pb_max_batchsize = pb_max_batchsize
+
+        self.auto_batchsize = auto_batchsize

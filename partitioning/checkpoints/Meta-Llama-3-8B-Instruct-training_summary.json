@@ -1,0 +1,58 @@
+[
+  {
+    "model": "Meta-Llama-3-8B-Instruct",
+    "device": "jetson-16g-2",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/partitioning/checkpoints/Meta-Llama-3-8B-Instruct-jetson-16g-2.pt",
+    "mae_latency_ms": 1.394491195678711,
+    "mae_power_W": 0.15989314019680023,
+    "rmse_latency_ms": 1.7579944133758545,
+    "rmse_power_W": 0.22429482638835907,
+    "mape_latency_percent": 3.1032536178827286,
+    "mape_power_percent": 1.807050034403801,
+    "best_epoch": 239,
+    "best_loss": 0.012407144531607628,
+    "num_samples": 40
+  },
+  {
+    "model": "Meta-Llama-3-8B-Instruct",
+    "device": "jetson-16g-7",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/partitioning/checkpoints/Meta-Llama-3-8B-Instruct-jetson-16g-7.pt",
+    "mae_latency_ms": 2.1952834129333496,
+    "mae_power_W": 0.2162364274263382,
+    "rmse_latency_ms": 3.416778564453125,
+    "rmse_power_W": 0.29280927777290344,
+    "mape_latency_percent": 2.1375665441155434,
+    "mape_power_percent": 1.9818499684333801,
+    "best_epoch": 401,
+    "best_loss": 0.05913194268941879,
+    "num_samples": 40
+  },
+  {
+    "model": "Meta-Llama-3-8B-Instruct",
+    "device": "jetson-16g-8",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/partitioning/checkpoints/Meta-Llama-3-8B-Instruct-jetson-16g-8.pt",
+    "mae_latency_ms": 1.032533049583435,
+    "mae_power_W": 0.1491851955652237,
+    "rmse_latency_ms": 1.2643475532531738,
+    "rmse_power_W": 0.21595963835716248,
+    "mape_latency_percent": 2.6531975716352463,
+    "mape_power_percent": 1.6799546778202057,
+    "best_epoch": 210,
+    "best_loss": 0.004607264418154955,
+    "num_samples": 40
+  },
+  {
+    "model": "Meta-Llama-3-8B-Instruct",
+    "device": "jetson-64g-4",
+    "checkpoint": "/home/austin/repos/AdaptSplit/AdaptSplit/partitioning/checkpoints/Meta-Llama-3-8B-Instruct-jetson-64g-4.pt",
+    "mae_latency_ms": 1.215309500694275,
+    "mae_power_W": 0.4172825813293457,
+    "rmse_latency_ms": 2.0416595935821533,
+    "rmse_power_W": 0.6297562122344971,
+    "mape_latency_percent": 2.774706296622753,
+    "mape_power_percent": 3.2901782542467117,
+    "best_epoch": 175,
+    "best_loss": 0.04732915759086609,
+    "num_samples": 48
+  }
+]

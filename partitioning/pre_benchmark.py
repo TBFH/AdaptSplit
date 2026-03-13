@@ -19,8 +19,8 @@ logger = None
 json_helper = None
 
 # MODEL_PATH = "/mnt/Data/austin/hf_models/opt-1.3b"
-MODEL_PATH = "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
-# MODEL_PATH = "/mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct"
+# MODEL_PATH = "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
+MODEL_PATH = "/mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct"
 
 def profiling(
     deployments: List[str],
@@ -187,13 +187,13 @@ def pre_benchmarks(
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--input-length', type=int, default=1)
-    parser.add_argument('-o', '--output-length', type=int, default=16)
+    parser.add_argument('-o', '--output-length', type=int, default=14)
     parser.add_argument('--seed', type=int, default=1)
     parser.add_argument('--vram-util', type=float, default=0.8)
     parser.add_argument('--log', action='store_true', default=False)
     parser.add_argument('--record', action='store_true', default=False)
     parser.add_argument('--json', action='store_true', default=False)
-    parser.add_argument('--deployments', type=str, default="['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-8g-1']")
+    parser.add_argument('--deployments', type=str, default="['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-16g-7']")
     args = parser.parse_args()
 
     # Logger init

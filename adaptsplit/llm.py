@@ -125,6 +125,9 @@ class OfflineLLM:
     def collect_prebenchmark_profiles(self) -> List[List[str]]:
         time.sleep(1)
         return self.engine.collect_prebenchmark_profiles()
+    
+    def get_decoding_distribution(self):
+        return self.engine.disagg_parallel_config.decoding.pipeline_distribution
 
 class AsyncLLM:
     """A Large Language Model (LLM) for online inference."""

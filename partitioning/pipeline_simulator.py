@@ -52,6 +52,7 @@ class PipelineSimulator:
     def sim(
         self,
         latency_power_pairs: List[Tuple[float, float]],
+        batch_size: int,
         output_len: int = 8,
         enable_record: bool = False,
         record_dir: Optional[str] = None
@@ -95,7 +96,7 @@ class PipelineSimulator:
         if enable_record:
             self._collect(record_dir=record_dir)
         
-        num_tokens = self.num_batches * output_len
+        num_tokens = self.num_batches * batch_size * output_len
         throughput = num_tokens / finish_time
         avg_power = sum([power for power in powers.values()])
         energy_efficiency = throughput / avg_power

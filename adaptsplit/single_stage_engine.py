@@ -155,6 +155,8 @@ class SingleStageLLMEngine(ABC):
         logger.info(f"Block manager: {self.block_manager}")
 
     def _prebenchmark_profile(self) -> List[List[str]]:
+        ASSUMED_BLOCK_PER_REQ = 2
+
         def get_block_size_in_bytes(num_layers: int, pp_size: int) -> float:
             num_heads = self.model_config.get_num_heads()
             head_dim = self.model_config.get_head_size()
@@ -162,7 +164,7 @@ class SingleStageLLMEngine(ABC):
             dtype_size = self.model_config.get_dtype_size()
             single_block_size = key_cache_size * 2 * dtype_size
             max_batchsize = self.extra_configs.pb_max_batchsize
-            return single_block_size * max_batchsize * pp_size
+            return single_block_size * max_batchsize * pp_size * ASSUMED_BLOCK_PER_REQ
         
         tmp_pc = ParallelConfig(pipeline_parallel_size=self.model_config.hf_config.num_hidden_layers)
         single_layer_size_in_bytes = self.model_config.get_model_size_in_bytes(tmp_pc)
