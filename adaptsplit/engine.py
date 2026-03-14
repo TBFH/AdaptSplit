@@ -576,6 +576,7 @@ class LLMEngine:
             request_tasks.append(asyncio.create_task(warmup_task(Policy.LPLD)))
         await asyncio.gather(*request_tasks)
         self.request_counter.reset()
+        self.decoding_engine.scheduler.reset_batchsize_counter()
         if self.extra_configs.prebenchmark:
             for engine in self.prefill_engines:
                 engine.collect_exec_times()
@@ -588,6 +589,11 @@ class LLMEngine:
         print("Done Warming Up Engine.")
         await asyncio.sleep(1)
 
+    def reset_all(self):
+        # decoding scheduler batchsize counter
+        self.decoding_engine.scheduler.reset_batchsize_counter()
+        # request counter
+        self.request_counter.reset()
         
 def add_engine_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument("--model", type=str, required=True)
@@ -596,25 +602,49 @@ def add_engine_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--use-dummy-weights", action="store_true")
     
-    parser.add_argument("--prefill-pipeline-parallel-size", type=int, default=2)
+    parser.add_argument("--prefill-pipeline-parallel-size", type=int, default=1)
     parser.add_argument("--prefill-tensor-parallel-size", type=int, default=1)
-    parser.add_argument("--decoding-pipeline-parallel-size", type=int, default=2)
+    parser.add_argument("--decoding-pipeline-parallel-size", type=int, default=4)
     parser.add_argument("--decoding-tensor-parallel-size", type=int, default=1)
     
     parser.add_argument("--block-size", type=int, default=16)
     parser.add_argument("--max-num-blocks-per-req", type=int, default=256)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.9)
-    parser.add_argument("--swap-space", type=int, default=16)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.8)
+    parser.add_argument("--swap-space", type=int, default=1)
     
     parser.add_argument("--prefill-sched-policy", type=str, default="fcfs")
-    parser.add_argument("--prefill-max-batch-size", type=int, default=256)
-    parser.add_argument("--prefill-max-tokens-per-batch", type=int, default=4096)
+    parser.add_argument("--prefill-max-batch-size", type=int, default=32)
+    parser.add_argument("--prefill-max-tokens-per-batch", type=int, default=16384)
     
     parser.add_argument("--decoding-sched-policy", type=str, default="fcfs")
-    parser.add_argument("--decoding-max-batch-size", type=int, default=256)
-    parser.add_argument("--decoding-max-tokens-per-batch", type=int, default=8192)
+    parser.add_argument("--decoding-max-batch-size", type=int, default=32)
+    parser.add_argument("--decoding-max-tokens-per-batch", type=int, default=16384)
     
     parser.add_argument("--simulator-mode", action="store_true")
     parser.add_argument("--profiler-data-path", type=str, default=None)
     parser.add_argument("--gpu-mem-size-gb", type=float, default=None)
+
+    parser.add_argument("--prefill-data-parallel-size", type=int, default=2)
+    parser.add_argument(
+        '--prefill-devices',
+        type=str,
+        default="['pc-3090', 'pc-4090']"
+    )
+    parser.add_argument(
+        '--decoding-devices',
+        type=str,
+        default="['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-8g-1']"
+    )
+    parser.add_argument('--decoding-pipeline-distribution', type=str, default="[]")
+    parser.add_argument('--waiting-block-prop-threshold', type=float, default=0.5)
+    parser.add_argument("--global-schedule-policy", type=str, default="random")
+
+    parser.add_argument("--print-log", action="store_true", default=False)
+    parser.add_argument("--sched-bar", action="store_true", default=False)
+    parser.add_argument("--req-pbar", action="store_true", default=False)
+    parser.add_argument("--enable-records", action="store_true", default=False)
+    parser.add_argument("--records-dir", type=str, default=None)
+    parser.add_argument("--pptimer-url", type=str, default=None)
+    parser.add_argument("--prebenchmark", action="store_true", default=False)
+    parser.add_argument("--auto-batchsize", action="store_true", default=False)
     

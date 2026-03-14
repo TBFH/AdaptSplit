@@ -1,29 +1,16 @@
 """
 Usage example:
 
-python -m adaptsplit.api_server.adaptsplit_api_server \\
-    --host 0.0.0.0 \\
-    --port {port} \\
-    --model {args.model} \\
-    --tokenizer {args.model} \\
-    \\
-    --prefill-tensor-parallel-size {prefill_tp} \\
-    --prefill-pipeline-parallel-size {prefill_pp} \\
-    --decoding-tensor-parallel-size {decoding_tp} \\
-    --decoding-pipeline-parallel-size {decoding_pp} \\
-    \\
-    --block-size 16 \\
-    --max-num-blocks-per-req 128 \\
-    --gpu-memory-utilization 0.95 \\
-    --swap-space 16 \\
-    \\
-    --prefill-sched-policy fcfs \\
-    --prefill-max-batch-size 128 \\
-    --prefill-max-tokens-per-batch 8192 \\
-    \\
-    --decoding-sched-policy fcfs \\
-    --decoding-max-batch-size 1024 \\
-    --decoding-max-tokens-per-batch 65536
+model_path:
+    [opt-1.3b]  "/mnt/Data/austin/hf_models/opt-1.3b"
+    [Llama-2-7b-chat-hf]  "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
+    [Meta-Llama-3-8B-Instruct]  "/mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct"
+
+python -m adaptsplit.api_server.adaptsplit_api_server \
+    --host localhost \
+    --port 32313 \
+    --model /mnt/Data/austin/hf_models/opt-1.3b \
+    --auto-batchsize
 """
 
 import argparse
@@ -129,7 +116,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     set_random_seed(args.seed)
-    ray.init()
+    # ray.init()
     
     engine = AsyncLLM.from_engine_args(args)
 

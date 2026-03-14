@@ -15,7 +15,7 @@ from adaptsplit.utils import Policy
 
 logger = init_logger(__name__)
 
-UPDATE_FREQUENCY = 8
+UPDATE_FREQUENCY = 2
 
 class DecodingStageScheduler(ABC):
     """The abstract class for a decoding stage scheduler.
@@ -89,6 +89,13 @@ class DecodingStageScheduler(ABC):
     def update_pbar(self) -> None:
         """
         Show the progress bar of the scheduler.
+        """
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def reset_batchsize_counter(self) -> None:
+        """
+        Clear all data about batchsize_counter.
         """
         raise NotImplementedError()
     
@@ -205,9 +212,14 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
         print(f"\033[92m [decoding_stage_scheduler] avg_req_len: {avg_req_len} \033[0m")
         avg_block_per_req = avg_req_len / self.block_manager.cache_config.block_size
         max_req_on_fly = self.gpu_blocks / avg_block_per_req
-        max_safe_batchsize = max_req_on_fly / self.parallel_config.pipeline_parallel_size
+        max_safe_batchsize = int(max_req_on_fly / self.parallel_config.pipeline_parallel_size)
         self.sched_config.max_batch_size = max(max_safe_batchsize, 16)
         print(f"\033[92m [decoding_stage_scheduler] max_batch_size updated to {self.sched_config.max_batch_size} \033[0m")
+
+    def reset_batchsize_counter(self):
+        self.req_len_history.clear()
+        self.sum_finished_req = 0
+        self.sched_config.max_batch_size = self.init_batch_size
 
     def _get_block_needed(self, length: int):
         block_size = self.block_manager.cache_config.block_size
@@ -281,7 +293,7 @@ class DecodingStageFCFSScheduler(DecodingStageScheduler):
             for req in finished_reqs:
                 self.req_len_history.append(req.get_input_len() + req.get_output_len())
             self.sum_finished_req += len(finished_reqs)
-            if self.sum_finished_req > UPDATE_FREQUENCY:
+            if self.sum_finished_req >= UPDATE_FREQUENCY:
                 self.sum_finished_req = self.sum_finished_req % UPDATE_FREQUENCY
                 avg_req_len = int(sum(self.req_len_history) / len(self.req_len_history))
                 self._update_max_batch_size(avg_req_len)

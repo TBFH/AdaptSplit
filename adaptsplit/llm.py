@@ -138,16 +138,24 @@ class AsyncLLM:
         disagg_parallel_config: DisaggParallelConfig,
         cache_config: CacheConfig,
         prefill_sched_config: PrefillStageSchedConfig,
-        decoding_sched_config: DecodingStageSchedConfig
+        decoding_sched_config: DecodingStageSchedConfig,
+        extra_configs: ExtraConfig,
+        prefill_devices: Optional[List[str]] = None,
+        decoding_devices: Optional[List[str]] = None,
+        global_schedule_policy: str = 'default',
     ):
         self.engine = LLMEngine(
             model_config,
             disagg_parallel_config,
             cache_config,
             prefill_sched_config,
-            decoding_sched_config
+            decoding_sched_config,
+            extra_configs,
+            prefill_devices,
+            decoding_devices,
+            global_schedule_policy
         )
-        
+        self.extra_configs = extra_configs
         asyncio.run(self.engine.initialize())
     
     def from_engine_args(
@@ -157,20 +165,24 @@ class AsyncLLM:
             model_config=ModelConfig(
                 model=args.model,
                 tokenizer=args.tokenizer,
-                trust_remote_code=args.trust_remote_code,
+                # trust_remote_code=args.trust_remote_code,
                 seed=args.seed,
-                use_dummy_weights=args.use_dummy_weights
+                # use_dummy_weights=args.use_dummy_weights
             ),
             disagg_parallel_config=DisaggParallelConfig(
                 prefill=ParallelConfig(
-                    tensor_parallel_size=args.prefill_tensor_parallel_size,
-                    pipeline_parallel_size=args.prefill_pipeline_parallel_size
+                    # tensor_parallel_size=args.prefill_tensor_parallel_size,
+                    # pipeline_parallel_size=args.prefill_pipeline_parallel_size
+                    data_parallel_size=args.prefill_data_parallel_size
                 ),
                 decoding=ParallelConfig(
-                    tensor_parallel_size=args.decoding_tensor_parallel_size,
-                    pipeline_parallel_size=args.decoding_pipeline_parallel_size
+                    # tensor_parallel_size=args.decoding_tensor_parallel_size,
+                    pipeline_parallel_size=args.decoding_pipeline_parallel_size,
+                    pipeline_distribution=eval(args.decoding_pipeline_distribution)
                 )
             ),
+            prefill_devices=eval(args.prefill_devices),
+            decoding_devices=eval(args.decoding_devices),
             cache_config=CacheConfig(
                 block_size=args.block_size,
                 max_num_blocks_per_req=args.max_num_blocks_per_req,
@@ -186,8 +198,19 @@ class AsyncLLM:
                 policy=args.decoding_sched_policy,
                 max_batch_size=args.decoding_max_batch_size,
                 max_tokens_per_batch=args.decoding_max_tokens_per_batch,
-                model_name=args.model,
-                waiting_block_prop_threshold=0.05
+                # model_name=args.model,
+                waiting_block_prop_threshold=args.waiting_block_prop_threshold
+            ),
+            global_schedule_policy=args.global_schedule_policy,
+            extra_configs=ExtraConfig(
+                print_log=args.print_log,
+                sched_bar=args.sched_bar,
+                req_pbar=args.req_pbar,
+                enable_records=args.enable_records,
+                records_dir=args.records_dir,
+                pptimer_url=args.pptimer_url,
+                prebenchmark=args.prebenchmark,
+                auto_batchsize=args.auto_batchsize
             )
         )
 
@@ -196,7 +219,9 @@ class AsyncLLM:
         
         This function should be called at the beginning of the server.
         """
-        await self.engine.start_all_event_loops()
+        event_loop_task = asyncio.create_task(self.engine.start_all_event_loops())
+        await self.engine.warmup()
+        await event_loop_task
         
     async def generate(
         self,
@@ -255,3 +280,11 @@ class AsyncLLM:
         logger.info(f"Aborted request {request_id}.")
         self.engine.abort_request(request_id)
 
+    def collect_records(self) -> None:
+        self.engine.collect_records()
+    
+    def collect_exec_times(self) -> List[List[float]]:
+        return self.engine.collect_exec_times()
+    
+    def get_decoding_distribution(self):
+        return self.engine.disagg_parallel_config.decoding.pipeline_distribution
