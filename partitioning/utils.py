@@ -522,6 +522,36 @@ def profile_power(devices, duration, step, plot_dir=None, avg=True):
     return power_data
 
 
+def profile_powers(devices, start, end, step, plot_dir=None, avg=True):
+    devices_jetson=[]
+    devices_pc=[]
+    for d in devices:
+        if 'jetson' in d:
+            devices_jetson.append(d)
+        elif 'pc' in d:
+            devices_pc.append(d)
+        else:
+            raise ValueError(f"Power Profile Error: Unknown Type of Device {d}")
+    # 接口调用参数
+    jetson_query = f'integrated_power_mW{"{"}instance=~"({"|".join(devices_jetson)})", statistic="power"{"}"}'
+    pc_query = f'DCGM_FI_DEV_POWER_USAGE{"{"}instance=~"({"|".join(devices_pc)})", gpu=~"(0|1)"{"}"}'
+    end = int(end)
+    start = int(start)
+    step = step    # 表示每多少秒获取一次数据
+    # 获取功耗数据
+    jetson_fetched = grafana_query_range(jetson_query, start, end, step)
+    pc_fetched = grafana_query_range(pc_query, start, end, step)
+    # 格式化功耗数据
+    power_data = sort_power_data(jetson_fetched, pc_fetched)
+    # 保存功耗曲线图
+    if plot_dir:
+        power_plot(devices, power_data, plot_dir)
+    # 计算平均功耗
+    power_data = get_avg_power(power_data, avg)
+    
+    return power_data
+
+
 def profile_vram(devices):
     # 接口调用参数
     instances = "|".join(devices)

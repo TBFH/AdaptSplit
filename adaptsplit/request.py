@@ -42,6 +42,7 @@ class SamplingParams:
             tokens after the EOS token is generated.
         max_tokens: Maximum number of tokens to generate per output sequence.
         logprobs: Number of log probabilities to return per output token.
+        policy: global scheduling policy, "HPHD", "HPLD" or "LPLD"
     """
 
     _SAMPLING_EPS = 1e-5
@@ -60,6 +61,9 @@ class SamplingParams:
         ignore_eos: bool = False,
         max_tokens: int = 16,
         logprobs: Optional[int] = None,
+        policy: Optional[str] = None,
+        ttft_slo: Optional[float] = None,
+        tpot_slo: Optional[float] = None
     ) -> None:
         self.n = n
         self.best_of = best_of if best_of is not None else n
@@ -78,6 +82,9 @@ class SamplingParams:
         self.ignore_eos = ignore_eos
         self.max_tokens = max_tokens
         self.logprobs = logprobs
+        self.policy = policy
+        self.ttft_slo = ttft_slo
+        self.tpot_slo = tpot_slo
 
         self._verify_args()
         if self.use_beam_search:
@@ -167,6 +174,7 @@ class Request:
         prompt_token_ids: the token ids of the prompt.
         sampling_params: sampling parameters for the request.
         priority: the priority of this request, default is 0.
+        policy: global scheduling policy, "HPHD", "HPLD" or "LPLD"
     """
 
     def __init__(

@@ -1,5 +1,5 @@
 import time
-from typing import List, Union, Optional, AsyncGenerator
+from typing import List, Union, Optional, Dict, Any, AsyncGenerator
 
 import asyncio
 from tqdm import tqdm
@@ -128,6 +128,15 @@ class OfflineLLM:
     
     def get_decoding_distribution(self):
         return self.engine.disagg_parallel_config.decoding.pipeline_distribution
+    
+    def profile(self) -> Dict[str, Any]:
+        return self.engine.profile_all()
+    
+    def summary(self, start: float, end: float) -> Dict[str, Any]:
+        return self.engine.summary_all(start, end)
+    
+    def reset(self) -> None:
+        self.engine.reset_all()
 
 class AsyncLLM:
     """A Large Language Model (LLM) for online inference."""
@@ -280,6 +289,15 @@ class AsyncLLM:
         logger.info(f"Aborted request {request_id}.")
         self.engine.abort_request(request_id)
 
+    def profile(self) -> Dict[str, Any]:
+        return self.engine.profile_all()
+    
+    def summary(self, start: float, end: float) -> Dict[str, Any]:
+        return self.engine.summary_all(start, end)
+    
+    def reset(self) -> None:
+        self.engine.reset_all()
+    
     def collect_records(self) -> None:
         self.engine.collect_records()
     

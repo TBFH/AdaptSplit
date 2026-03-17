@@ -242,6 +242,13 @@ class BlockManager:
             f"({num_gpu_blocks_used / self.max_num_gpu_blocks * 100:.2f}%) used"
         )
 
+    def get_block_usage(self) -> float:
+        return (
+            self.max_num_gpu_blocks
+            - len(self.free_gpu_blocks_list)
+            - len(self.swapping_gpu_blocks_list)
+        ) / self.max_num_gpu_blocks
+
     """The following methods are used for swapping
     We use the term "swap in" to mean moving blocks from CPU to GPU, and
     "swap out" to mean moving blocks from GPU to CPU.

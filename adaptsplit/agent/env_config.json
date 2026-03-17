@@ -1,0 +1,31 @@
+{
+  "endpoints": {
+    "generate_url": "http://127.0.0.1:32313/generate",
+    "profile_url": "http://127.0.0.1:32313/profile",
+    "summary_url": "http://127.0.0.1:32313/summary",
+    "reset_url": "http://127.0.0.1:32313/reset"
+  },
+  "model": "opt-1.3b",
+  "dataset_path": "/home/austin/datasets/agent_training/sharegpt-opt-1.3b-train.json",
+  "num_episode_requests": 50,
+  "reward_w1": 0.5,
+  "reward_w2": 0.5,
+  "seed": 1,
+  "request_timeout_s": 3600,
+  "max_workers": 256,
+  "dispatch_settle_seconds": 0.05,
+  "state_scalar_names": [
+    "input_length",
+    "ttft_slo_target_ms",
+    "tpot_slo_target_ms",
+    "h_queue_len",
+    "l_queue_len",
+    "migration_len",
+    "h_kv_cache_util",
+    "l_kv_cache_util",
+    "h_inflight",
+    "l_inflight"
+  ],
+  "action_names": ["HPHD", "HPLD", "LPLD"],
+  "request_rates": [0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0]
+}

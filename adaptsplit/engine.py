@@ -1,6 +1,6 @@
 import time
 import copy
-from typing import List, Optional, Tuple, Dict, AsyncGenerator
+from typing import List, Optional, Tuple, Dict, Any, AsyncGenerator
 import asyncio
 import math
 import argparse
@@ -35,6 +35,7 @@ from adaptsplit.lifetime import LifetimeEvent, LifetimeEventType
 from adaptsplit.global_scheduler import GlobalScheduler
 
 from partitioning.uneven_partition import search_optimal_partition
+from partitioning.utils import profile_powers
 
 logger = init_logger(__name__)
 
@@ -243,9 +244,11 @@ class LLMEngine:
 
         # Initialize global scheduler
         self.global_scheduler = GlobalScheduler(
+            model=self.model_config.model.split('/')[-1],
             prefill_engines=self.prefill_engines,
             decoding_engine=self.decoding_engine,
-            global_schedule_policy=global_schedule_policy
+            global_schedule_policy=global_schedule_policy,
+            profile_func_callback=self.profile_all
         )
         
         self.engine_initialized = False
@@ -465,6 +468,7 @@ class LLMEngine:
             self.tokenizer,
             arrival_time,
             request_id,
+            Policy(sampling_params.policy) if sampling_params.policy else None
         )
         self.request_outputs[req.request_id] = asyncio.Queue()
         self.request_lifetime_events[req.request_id] = []
@@ -594,6 +598,39 @@ class LLMEngine:
         self.decoding_engine.scheduler.reset_batchsize_counter()
         # request counter
         self.request_counter.reset()
+    
+    def profile_all(self) -> Dict[str, Any]:
+        h_queue_len = 0
+        migration_len = 0
+        h_kv_cache_util = 0
+        h_inflight = 0
+        for engine in self.prefill_engines:
+            h_queue_len += engine.scheduler.get_num_waiting_requests()
+            migration_len += engine.scheduler.get_num_unaccepted_requests()
+            h_kv_cache_util += engine.block_manager.get_block_usage()
+            h_inflight += engine.scheduler.get_processing_num_requests()
+        l_queue_len = self.decoding_engine.scheduler.get_waiting_num_requests()
+        h_kv_cache_util = h_kv_cache_util / len(self.prefill_engines)
+        l_kv_cache_util = self.decoding_engine.block_manager.get_block_usage()
+        h_inflight = h_inflight / len(self.prefill_engines)
+        l_inflight = self.decoding_engine.scheduler.get_processing_num_requests()
+        return {
+            "h_queue_len": h_queue_len,
+            "l_queue_len": l_queue_len,
+            "migration_len": migration_len,
+            "h_kv_cache_util": h_kv_cache_util,
+            "l_kv_cache_util": l_kv_cache_util,
+            "h_inflight": h_inflight,
+            "l_inflight": l_inflight,
+        }
+
+    def summary_all(self, start: float, end: float) -> Dict[str, Any]:
+        return profile_powers(
+            devices=self.prefill_devices + self.decoding_devices,
+            start=start,
+            end=end,
+            step=1
+        )
         
 def add_engine_cli_args(parser: argparse.ArgumentParser):
     parser.add_argument("--model", type=str, required=True)
@@ -637,7 +674,7 @@ def add_engine_cli_args(parser: argparse.ArgumentParser):
     )
     parser.add_argument('--decoding-pipeline-distribution', type=str, default="[]")
     parser.add_argument('--waiting-block-prop-threshold', type=float, default=0.5)
-    parser.add_argument("--global-schedule-policy", type=str, default="random")
+    parser.add_argument("--global-schedule-policy", type=str, default="default")
 
     parser.add_argument("--print-log", action="store_true", default=False)
     parser.add_argument("--sched-bar", action="store_true", default=False)

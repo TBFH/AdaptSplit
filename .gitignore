@@ -21,6 +21,9 @@ profile_database
 *.py[cod]
 *$py.class
 
+adaptsplit/agent/**/outputs/
+adaptsplit/agent/**/generated/
+
 # C extensions
 *.so
 

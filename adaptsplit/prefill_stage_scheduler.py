@@ -51,6 +51,13 @@ class PrefillStageScheduler(ABC):
         Get the number of requests that are waiting for processing.
         """
         raise NotImplementedError()
+    
+    @abstractmethod
+    def get_num_unaccepted_requests(self) -> int:
+        """
+        Get the number of requests that are waiting to be accepted by Decoding Engine.
+        """
+        raise NotImplementedError()
 
     @abstractmethod
     def print_status(self) -> None:
@@ -282,6 +289,9 @@ class PrefillStageFCFSScheduler(PrefillStageScheduler):
     
     def get_num_waiting_requests(self) -> int:
         return len(self.waiting_queue)
+    
+    def get_num_unaccepted_requests(self) -> int:
+        return len(self.unaccepted_queue)
 
     def __repr__(self) -> str:
         return (

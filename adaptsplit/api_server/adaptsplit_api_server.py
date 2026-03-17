@@ -10,6 +10,7 @@ python -m adaptsplit.api_server.adaptsplit_api_server \
     --host localhost \
     --port 32313 \
     --model /mnt/Data/austin/hf_models/opt-1.3b \
+    --global-schedule-policy default \
     --auto-batchsize
 """
 
@@ -95,7 +96,7 @@ async def generate(request: Request) -> Response:
                 # Abort the request if the client disconnects.
                 await engine.abort(request_id)
                 return Response(status_code=499)
-            final_outputs.append((step_output, time.perf_counter()))
+            final_outputs.append((step_output, time.time()))
 
         request_events = engine.get_and_pop_request_lifetime_events(request_id)
         text_output = prompt + ''.join([step_output[0].new_token for step_output in final_outputs])
@@ -105,6 +106,29 @@ async def generate(request: Request) -> Response:
             "lifetime_events": json_encode_lifetime_events(request_events)
         }
         return JSONResponse(ret)
+
+
+@app.post("/profile")
+async def profile() -> Response:
+    profiles = engine.profile()
+    return JSONResponse(profiles)
+
+
+@app.post("/summary")
+async def summary(request: Request) -> Response:
+    request_dict = await request.json()
+    start = request_dict["start"]
+    end = request_dict["end"]
+    summarys = engine.summary(start, end)
+    return JSONResponse(summarys)
+
+
+@app.post("/reset")
+async def reset():
+    engine.reset()
+    return {
+        "ok": True
+    }
 
 
 if __name__ == "__main__":

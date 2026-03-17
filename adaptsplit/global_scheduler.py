@@ -1,4 +1,4 @@
-from typing import List, Callable, Tuple, Optional
+from typing import List, Callable, Tuple, Optional, Dict, Any
 import random
 import asyncio
 
@@ -11,6 +11,8 @@ from adaptsplit.config import PrefillStageSchedConfig, ParallelConfig
 from adaptsplit.logger import init_logger
 from adaptsplit.request import Request, BatchedRequests, MigratingRequest
 from adaptsplit.utils import Policy
+
+from adaptsplit.agent.PPO import OnlineSchedulerPolicy
 
 logger = init_logger(__name__)
 
@@ -36,15 +38,22 @@ class GlobalScheduler:
 
     def __init__(
         self,
+        model: str,
         prefill_engines: List[PrefillStageLLMEngine],
         decoding_engine: DecodingStageLLMEngine,
-        global_schedule_policy: str = 'default'
+        global_schedule_policy: str = 'default',
+        profile_func_callback: Optional[Callable[[], Dict[str, Any]]] = None
     ):
-        self.agent = None
+        self.agent = OnlineSchedulerPolicy(
+            model=model,
+            agent_outputs_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/outputs",
+            embedder_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/sentence_embedding/generated",
+        )
         self.request_queue = asyncio.Queue()
         # engines
         self.prefill_engines = prefill_engines
         self.decoding_engine = decoding_engine
+        self.profile_func_callback = profile_func_callback
 
         self.prefill_index = -1
         self.global_schedule_policy = global_schedule_policy
@@ -67,8 +76,17 @@ class GlobalScheduler:
                 policy = Policy.HPLD
             elif self.global_schedule_policy == 'lpld':
                 policy = Policy.LPLD
+            elif self.global_schedule_policy == 'default':
+                assert (
+                    self.profile_func_callback != None
+                ), "[GlobalScheduler] No profile_func_callback found"
+                assert (
+                    request.sampling_params.ttft_slo and request.sampling_params.tpot_slo
+                ), "[GlobalScheduler] ttft and tpot slo for request is needed when global_schedule_policy is 'default'"
+                profiles = self.profile_func_callback()
+                policy = self.agent.predict(request, profiles)
             else:
-                policy = None   # agent decide
+                raise ValueError(f"global schedule policy {self.global_schedule_policy} is not supported")
             request.policy = policy
 
         # print(f"[Global Scheduler] request_id: {request.request_id} policy: {request.policy}")
