@@ -27,8 +27,9 @@ class RequestResult:
         self.lifecycle_events = lifetime_events
         
         self.latency = end_time - start_time
-        self.ttft = token_timestamps[0] - start_time
+        self.ttft = (token_timestamps[0] - start_time) * 1000   # s -> ms
         self.tpot = 0 if output_len == 1 else (token_timestamps[-1] - token_timestamps[0]) / (output_len-1)
+        self.tpot = self.tpot * 1000    # s -> ms
 
 def read_request_results(path: str) -> List[RequestResult]:
     with open(path, "r") as f:

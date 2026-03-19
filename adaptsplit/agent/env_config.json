@@ -8,12 +8,12 @@
   "model": "opt-1.3b",
   "dataset_path": "/home/austin/datasets/agent_training/sharegpt-opt-1.3b-train.json",
   "num_episode_requests": 50,
-  "reward_w1": 0.5,
-  "reward_w2": 0.5,
+  "reward_w1": 5.0,
+  "reward_w2": 20.0,
   "seed": 1,
   "request_timeout_s": 3600,
-  "max_workers": 256,
-  "dispatch_settle_seconds": 0.05,
+  "max_workers": 512,
+  "dispatch_settle_seconds": 0.02,
   "state_scalar_names": [
     "input_length",
     "ttft_slo_target_ms",
@@ -27,5 +27,5 @@
     "l_inflight"
   ],
   "action_names": ["HPHD", "HPLD", "LPLD"],
-  "request_rates": [0.1, 0.25, 0.5, 0.75, 1.0, 2.0, 3.0]
+  "request_rates": [1.0]
 }

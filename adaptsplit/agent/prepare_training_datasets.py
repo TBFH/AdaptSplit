@@ -26,9 +26,12 @@ from adaptsplit.agent.sentence_embedding.chat import SentenceEmbedder
 
 TTFT_TPOT_SLO = {
     "sharegpt": {
-        "opt-1.3b": (1200, 500),
-        "Llama-2-7b-chat-hf": (2000, 1000),
-        "Meta-Llama-3-8B-Instruct": (2500, 1200)
+        "opt-1.3b": (1500, 750),
+        "Llama-2-7b-chat-hf": (2500, 1500),
+        "Meta-Llama-3-8B-Instruct": (3000, 2000)
+    },
+    "humaneval": {
+        "opt-1.3b": (500, 750),
     }
 }
 
@@ -99,6 +102,33 @@ def sample_dataset(
             
             if len(result) > args.num_req:
                 break
+
+        
+        
+        filtered_dataset = []
+        with open("/home/austin/datasets/humaneval/standard_humaneval.jsonl", "r") as f:
+            for line in f.readlines():
+                if line.strip() == "": continue
+                data = json.loads(line)
+                context = data["prompt"]
+                context_token_ids = tokenizer(context).input_ids
+                answer = data["canonical_solution"]
+                answer_token_ids = tokenizer(answer).input_ids
+                if len(context_token_ids) + len(answer_token_ids) >= 2048:
+                    continue
+                filtered_dataset.append({
+                    "request_id": id_counter,
+                    "prompt": context,
+                    "input_length": len(context_token_ids),
+                    "output_length": len(answer_token_ids),
+                    "ttft_slo_ms": TTFT_TPOT_SLO["humaneval"][args.model][0],
+                    "tpot_slo_ms": TTFT_TPOT_SLO["humaneval"][args.model][1],
+                    "embedding": embedder.embed(context)
+                })
+                id_counter += 1
+        filtered_dataset = filtered_dataset * 2
+        result = result + filtered_dataset
+        random.shuffle(result)
         
         # return Dataset(f"sharegpt-mt-{args.sharegpt_min_turns}-mipt-{args.sharegpt_min_prompt_turns}-mxpt-{args.sharegpt_max_prompt_turns}", result)
         # return Dataset(f"sharegpt", result)
@@ -293,6 +323,6 @@ if __name__ == "__main__":
         --dataset-path /home/austin/datasets/datasets--anon8231489123--ShareGPT_Vicuna_unfiltered/snapshots/192ab2185289094fc556ec8ce5ce1e8e587154ca/ShareGPT_V3_unfiltered_cleaned_split_no_imsorry.json \
         --tokenizer /mnt/Data/austin/hf_models/opt-1.3b \
         --output-dir /home/austin/datasets/agent_training/ \
-        --num-req 500
+        --num-req 5000
     '''
     

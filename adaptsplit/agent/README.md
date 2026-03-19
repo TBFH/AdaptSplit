@@ -101,6 +101,30 @@ python ppo_main.py \
 - 接着则可以运行`ppo_main.py`开始训练agent。
 - 在global_scheduler中加载agent，以及sentence embedder，其中时AsyncLLM中global_scheduler_policy设置为`default`，即通过agent做请求的调度决策。对于到来的请求，先进行sentence embedding，并获取请求对应SLO及各方面资源情况，通过`_compose_state`构造状态state，给到agent得到action，继而实现调度。
 
+
+1. 使用以下命令启动在线引擎：
+
+```bash
+python -m adaptsplit.api_server.adaptsplit_api_server \
+    --host localhost \
+    --port 32313 \
+    --model /mnt/Data/austin/hf_models/opt-1.3b \
+    --global-schedule-policy random \
+    --auto-batchsize
+```
+
+2. 使用以下命令开始PPO开始训练：
+
+```bash
+python -m adaptsplit.agent.ppo_main \
+    --env-config /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/env_config.json \
+    --output-dir /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/outputs \
+    --llm-model glm-5 \
+    --llm-response-dir /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/reward_model/generated \
+    --state-norm
+```
+
+
 ## 在线调度推理
 
 在线调度时其实只需要 final_actor.pt。final_critic.pt 是 PPO 训练时做 value 估计用的，final_reward_model.pt 是 LaRe-RD 训练时把 latent reward factors 映射成 proxy reward 用的；真正部署时，决策链路是 state → policy network → action，不是靠 reward model 做动作选择。

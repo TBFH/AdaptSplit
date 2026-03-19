@@ -44,11 +44,14 @@ class GlobalScheduler:
         global_schedule_policy: str = 'default',
         profile_func_callback: Optional[Callable[[], Dict[str, Any]]] = None
     ):
-        self.agent = OnlineSchedulerPolicy(
-            model=model,
-            agent_outputs_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/outputs",
-            embedder_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/sentence_embedding/generated",
-        )
+        if global_schedule_policy == 'default':
+            self.agent = OnlineSchedulerPolicy(
+                model=model,
+                agent_outputs_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/outputs",
+                embedder_dir="/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/sentence_embedding/generated",
+            )
+        else:
+            self.agent = None
         self.request_queue = asyncio.Queue()
         # engines
         self.prefill_engines = prefill_engines
@@ -89,7 +92,7 @@ class GlobalScheduler:
                 raise ValueError(f"global schedule policy {self.global_schedule_policy} is not supported")
             request.policy = policy
 
-        # print(f"[Global Scheduler] request_id: {request.request_id} policy: {request.policy}")
+        print(f"[Global Scheduler] request_id: {request.request_id} policy: {request.policy}")
         if request.policy == Policy.HPHD or request.policy == Policy.HPLD:
             self.prefill_index = (self.prefill_index + 1) % len(self.prefill_engines)
             self.prefill_engines[self.prefill_index].add_request(request)

@@ -6,7 +6,8 @@ import os
 import random
 from pathlib import Path
 from typing import Any, Dict, Tuple
-
+import time
+import copy
 import numpy as np
 import torch
 
@@ -229,12 +230,16 @@ def train(args: argparse.Namespace) -> None:
             history.append(episode_metrics)
 
             if episode_idx % args.log_interval == 0:
-                print(json.dumps(episode_metrics, ensure_ascii=False, indent=2))
+                log_metrics = copy.deepcopy(episode_metrics)
+                log_metrics.pop("completed_requests", None)
+                print(json.dumps(log_metrics, ensure_ascii=False, indent=2))
 
             if episode_idx % args.save_interval == 0:
                 agent.save(str(output_dir / f"{env_cfg.model}-checkpoint_ep{episode_idx}"))
-                with open(output_dir / "history.json", "w", encoding="utf-8") as f:
+                with open(output_dir / f"{env_cfg.model}-history.json", "w", encoding="utf-8") as f:
                     json.dump(history, f, ensure_ascii=False, indent=2)
+            
+            time.sleep(10)
 
         agent.save(str(output_dir / f"{env_cfg.model}-final"))
         save_deploy_artifacts(output_dir, env, args, state_norm)
@@ -246,47 +251,39 @@ def train(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="PPO + LaRe-RD for edge LLM scheduling")
-    parser.add_argument("--env-config", type=str, required=True, help="Path to the JSON environment config file.")
-    parser.add_argument("--output-dir", type=str, default="./outputs")
+    parser.add_argument("--env-config", type=str, required=True, help="Path to the JSON environment config file.")  # !
+    parser.add_argument("--output-dir", type=str, default="./outputs")  # !
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--total-episodes", type=int, default=10)
-    parser.add_argument("--log-interval", type=int, default=1)
-    parser.add_argument("--save-interval", type=int, default=3)
+    parser.add_argument("--total-episodes", type=int, default=100)   # !
+    parser.add_argument("--log-interval", type=int, default=5)      # !
+    parser.add_argument("--save-interval", type=int, default=20)    # !
 
     parser.add_argument("--rd-method", type=str, default="LaRe_RD", choices=["none", "RD", "LaRe_RD"])
-    parser.add_argument("--reward-lr", type=float, default=3e-4)
-    parser.add_argument("--llm-model", type=str, default="gpt-4.1")
+    parser.add_argument("--reward-lr", type=float, default=1e-4)
+    parser.add_argument("--llm-model", type=str, default="gpt-4.1")     # !
     parser.add_argument("--llm-temperature", type=float, default=0.2)
     parser.add_argument("--llm-candidates", type=int, default=5)
-    parser.add_argument("--llm-response-dir", type=str, default="./llm_reward_cache")
+    parser.add_argument("--llm-response-dir", type=str, default="./llm_reward_cache")   # !
 
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--gae-lambda", type=float, default=0.95)
     parser.add_argument("--clip-epsilon", type=float, default=0.2)
-    parser.add_argument("--actor-lr", type=float, default=3e-4)
-    parser.add_argument("--critic-lr", type=float, default=3e-4)
+    parser.add_argument("--actor-lr", type=float, default=1e-4)
+    parser.add_argument("--critic-lr", type=float, default=1e-4)
     parser.add_argument("--entropy-coef", type=float, default=0.01)
     parser.add_argument("--value-coef", type=float, default=0.5)
     parser.add_argument("--max-grad-norm", type=float, default=0.5)
-    parser.add_argument("--ppo-epochs", type=int, default=10)
+    parser.add_argument("--ppo-epochs", type=int, default=20)       # !
     parser.add_argument("--minibatch-size", type=int, default=32)
     parser.add_argument("--hidden-dim", type=int, default=128)
-    parser.add_argument("--reward-warmup-episodes", type=int, default=5)
-    parser.add_argument("--reward-updates-per-episode", type=int, default=10)
+    parser.add_argument("--reward-warmup-episodes", type=int, default=5)        # !
+    parser.add_argument("--reward-updates-per-episode", type=int, default=20)   # !
     parser.add_argument("--reward-batch-size", type=int, default=16)
-    parser.add_argument("--trajectory-buffer-size", type=int, default=1000)
-    parser.add_argument("--state-norm", action="store_true")
+    parser.add_argument("--trajectory-buffer-size", type=int, default=5000)
+    parser.add_argument("--state-norm", action="store_true")    # !
     return parser
 
 
 if __name__ == "__main__":
     train(build_parser().parse_args())
-
-
-
-'''
-python -m adaptsplit.agent.ppo_main \
-    --env-config ./env_config.json \
-    --state-norm
-'''

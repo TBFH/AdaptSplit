@@ -21,6 +21,7 @@ class MLP(nn.Module):
         last_dim = input_dim
         for hidden_dim in hidden_dims:
             layers.append(nn.Linear(last_dim, hidden_dim))
+            layers.append(nn.LayerNorm(hidden_dim))
             layers.append(activation())
             if dropout > 0:
                 layers.append(nn.Dropout(dropout))
@@ -28,6 +29,7 @@ class MLP(nn.Module):
         layers.append(nn.Linear(last_dim, output_dim))
         if output_activation is not None:
             layers.append(output_activation)
+        # layers.append(nn.Tanh())    # constrain to [-1, 1]
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:

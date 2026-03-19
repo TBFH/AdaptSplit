@@ -94,4 +94,17 @@ class LLMRDRewardDecomposer(RDRewardDecomposer):
 
     def forward(self, states: torch.Tensor, actions: torch.Tensor, next_states: torch.Tensor) -> torch.Tensor:
         latent_rewards = self.latent_forward(states, actions)
+
+        # batch-wise normalization
+        if latent_rewards.dim() == 3:
+            mean = latent_rewards.mean(dim=(0, 1), keepdim=True)
+            std = latent_rewards.std(dim=(0, 1), keepdim=True).clamp_min(1e-6)
+        else:
+            mean = latent_rewards.mean(dim=0, keepdim=True)
+            std = latent_rewards.std(dim=0, keepdim=True).clamp_min(1e-6)
+
+        latent_rewards = (latent_rewards - mean) / std
+        latent_rewards = torch.clamp(latent_rewards, -5.0, 5.0)
+
+        print(f"[LLMrd forward] latent_rewards.mean: {latent_rewards.mean()}")
         return self.reward_model(latent_rewards)

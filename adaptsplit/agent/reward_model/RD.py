@@ -15,8 +15,8 @@ class RDConfig:
     state_dim: int
     action_dim: int
     hidden_dim: int = 128
-    reward_lr: float = 3e-4
-    device: str = "cpu"
+    reward_lr: float = 1e-4
+    device: str = "cuda"
 
 
 class RDRewardDecomposer(nn.Module):
@@ -69,7 +69,17 @@ class RDRewardDecomposer(nn.Module):
         step_rewards = self.forward(states, actions, next_states).squeeze(-1)
         pred_returns = (step_rewards * masks).sum(dim=1)
         target_returns = episodic_returns.reshape(-1)
-        loss = self.loss_fn(pred_returns, target_returns)
+
+        # normalize target to per-step average return
+        valid_steps = masks.sum(dim=1).clamp_min(1.0)
+        pred_avg = pred_returns / valid_steps
+        target_avg = target_returns / valid_steps
+
+        print(f"[RD update] step_rewards.mean: {step_rewards.mean()}")
+        print(f"[RD update] pred_returns.mean: {pred_returns.mean()},  target_returns.mean: {target_returns.mean()}")
+
+        # loss = self.loss_fn(pred_returns, target_returns)
+        loss = self.loss_fn(pred_avg, target_avg)
         loss.backward()
         self.optimizer.step()
         return {"rd_loss": float(loss.item())}

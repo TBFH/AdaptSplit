@@ -48,7 +48,7 @@ import ray
 
 logger = init_logger(__name__)
 
-TIMEOUT_KEEP_ALIVE = 5  # seconds.
+TIMEOUT_KEEP_ALIVE = 300  # seconds.
 app = FastAPI()
 
 

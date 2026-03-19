@@ -12,6 +12,7 @@ import aiohttp
 import asyncio
 import numpy as np
 import requests
+from itertools import cycle, islice
 
 from adaptsplit.agent.env_utils import *
 
@@ -73,7 +74,7 @@ class EngineEndpoints:
     generate_url: str
     profile_url: str
     summary_url: str
-    reset_url: Optional[str] = None
+    reset_url: str
 
 
 @dataclass
@@ -89,8 +90,8 @@ class SchedulerEnvConfig:
     max_workers: int = 256
     dispatch_settle_seconds: float = 0.0
     state_scalar_names: Optional[List[str]] = None
-    action_names: List[str]
-    request_rates: List[float] = []
+    action_names: List[str] = field(default_factory=list)
+    request_rates: List[float] = field(default_factory=list)
 
 
 class EngineHTTPClient:
@@ -217,7 +218,8 @@ class AdaptsplitSchedulingEnv():
             raise ValueError("[Env] The dataset is empty. Please provide at least one request sample.")
         
         if not self.config.request_rates:
-            raise ValueError("[Env] request_rates is empty. Please provide at least one request rate.")
+            raise ValueError("[Env] request_rates is empty. Please provide at least one request rate.") 
+        self.dataset_cycle = cycle(self.dataset)
 
         self._embedding_dim = int(self._get_embedding(self.dataset[0]).shape[0])
         self._scalar_names = self._build_scalar_names()
@@ -240,7 +242,7 @@ class AdaptsplitSchedulingEnv():
         self._last_profile: Dict[str, Any] = {}
         self._step_count = 0
 
-        self._epoch_count = -1
+        self._epoch_count = 0
         self._intervals = []
         self._start_time = None
 
@@ -294,7 +296,8 @@ class AdaptsplitSchedulingEnv():
 
     def _sample_episode_requests(self) -> List[RequestItem]:
         if len(self.dataset) >= self.config.num_episode_requests:
-            return self.rng.sample(self.dataset, self.config.num_episode_requests)
+            # return self.rng.sample(self.dataset, self.config.num_episode_requests)
+            return list(islice(self.dataset_cycle, self.config.num_episode_requests))
         return [self.rng.choice(self.dataset) for _ in range(self.config.num_episode_requests)]
 
     # ------------------------------ Engine interaction ------------------------------
@@ -314,10 +317,10 @@ class AdaptsplitSchedulingEnv():
             completed.append({
                 "request_id": item.request_id,
                 "strategy": strategy,
-                "ttft_slo_ms": item.ttft_slo_ms,
-                "tpot_slo_ms": item.tpot_slo_ms,
                 "input_length": item.input_length,
                 "output_length": result.output_len,
+                "ttft_slo_ms": item.ttft_slo_ms,
+                "tpot_slo_ms": item.tpot_slo_ms,
                 "ttft": result.ttft,
                 "tpot": result.tpot,
                 "start_time": result.start_time,
@@ -340,13 +343,19 @@ class AdaptsplitSchedulingEnv():
     def _compute_episode_reward(self) -> Tuple[float, Dict[str, float]]:
         start_times, end_times = [], []
         sum_tokens = 0
+        # req_throughputs = []
         for req in self._completed_results:
             start_times.append(req["start_time"])
             end_times.append(req["end_time"])
             sum_tokens += req["input_length"] + req["output_length"]
+            # req_throughputs.append(
+            #     (req["input_length"] + req["output_length"]) / (req["end_time"] - req["start_time"])
+            # )
         latency = max(end_times) - min(start_times)
         powers_summary = self.client.summary(min(start_times), max(end_times))
+        powers_summary.pop('pc-3090-1', None)
 
+        # throughput = sum(req_throughputs) / len(req_throughputs)
         throughput = sum_tokens / latency
         total_avg_power = sum(powers_summary.values())
         violation_rate = self._compute_violation_rate()
@@ -356,9 +365,9 @@ class AdaptsplitSchedulingEnv():
         metrics = {
             "sum_tokens": sum_tokens,
             "latency": latency,
-            "throughput": throughput,
-            "total_avg_power": total_avg_power,
-            "energy_efficiency": energy_efficiency,
+            "throughput_token/s": throughput,
+            "total_avg_power_W": total_avg_power,
+            "energy_efficiency_token/J": energy_efficiency,
             "violation_rate": violation_rate,
             "episodic_reward": reward,
         }
@@ -376,8 +385,8 @@ class AdaptsplitSchedulingEnv():
         self._pending_futures.clear()
         self._step_count = 0
         self._current_idx = 0
-        self._epoch_count += 1
         self._episode_requests = self._sample_episode_requests()
+        self._epoch_count += 1
 
         num_rates = len(self.config.request_rates)
         self._intervals = self._get_intervals(
@@ -385,6 +394,7 @@ class AdaptsplitSchedulingEnv():
             process_name="possion",
             request_rate=self.config.request_rates[self._epoch_count % num_rates]
         )
+        print(f"[Env] Started epoch {self._epoch_count} with request_rate {self.config.request_rates[self._epoch_count % num_rates]}")
         self._start_time = time.time()
 
         self._current_request = self._episode_requests[0]
@@ -420,14 +430,15 @@ class AdaptsplitSchedulingEnv():
         truncated = False
 
         if done:
+            print(f"[Env] Done epoch {self._epoch_count}")
             self._wait_all()
             reward, metrics = self._compute_episode_reward()
             terminal_state = np.zeros((self.state_dim,), dtype=np.float32)
             info = {
                 **metrics,
+                "request_rate": self.config.request_rates[self._epoch_count % len(self.config.request_rates)],
                 "completed_requests": self._completed_results,
-                "last_strategy": strategy,
-                "request_rate": self.config.request_rates[self._epoch_count % len(self.config.request_rates)]
+                # "last_strategy": strategy,
             }
             self._current_request = None
             return terminal_state, float(reward), True, truncated, info

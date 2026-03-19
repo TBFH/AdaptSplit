@@ -11,7 +11,7 @@ from adaptsplit.agent.sentence_embedding.prompting import SentenceEmbeddingPromp
 
 @dataclass
 class LLMCallConfig:
-    model: str = "qwen-plus"
+    model: str = "gpt-4.1"
     temperature: float = 0.2
     max_retries: int = 5
     n_candidates: int = 5
@@ -34,22 +34,19 @@ class OpenAIResponsesClient:
 
         self.client = OpenAI(
             api_key=os.getenv("DASHSCOPE_API_KEY"),
-            base_url="https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+            base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
         )
         self.model = model
         self.temperature = temperature
 
     def generate(self, messages: Sequence[Dict[str, str]]) -> str:
-        response = self.client.responses.create(
+        completion = self.client.chat.completions.create(
             model=self.model,
-            input=list(messages),
+            messages=list(messages),
             # temperature=self.temperature,
         )
-        text = getattr(response, "output_text", None)
-        if text is None:
-            # Fall back to the raw model response structure.
-            text = str(response)
-        return text
+        out = completion.choices[0].message.content
+        return str(out)
 
 
 class JSONRepairError(RuntimeError):
@@ -58,6 +55,10 @@ class JSONRepairError(RuntimeError):
 
 def _ensure_json_payload(text: str) -> str:
     text = text.strip()
+    if text.startswith("```"):
+        text = text.strip("`")
+        if text.startswith("json"):
+            text = text[4:].strip()
     payload = json.loads(text)
     for required_key in ["Understand", "Analyze", "Functions"]:
         if required_key not in payload:
@@ -198,7 +199,7 @@ if __name__ == "__main__":
     save_dir = Path("/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/sentence_embedding/generated")
     response_id = 0
     config = LLMCallConfig(
-        model="qwen-plus"
+        model="glm-5"
     )
     response_file = save_dir / f"response_{response_id}.npy"
 
