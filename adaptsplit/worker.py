@@ -82,10 +82,6 @@ class ParaWorker:
         
         self.device = torch.device(f"cuda:0")
         torch.cuda.set_device(self.device)
-
-        if self.stage == Stage.PREFILL:
-            torch.backends.cuda.enable_mem_efficient_sdp(False)
-            torch.backends.cuda.enable_flash_sdp(False)
         
         # K/V cache on GPU
         self.k_cache = None
