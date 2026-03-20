@@ -355,9 +355,18 @@ class AdaptsplitSchedulingEnv():
         powers_summary = self.client.summary(min(start_times), max(end_times))
         powers_summary.pop('pc-3090-1', None)
 
+        # weighted_powers
+        weighted_powers = []
+        for node, power in powers_summary.items():
+            if 'pc' in node:
+                weighted_powers.append(power * 2.5)
+            else:
+                weighted_powers.append(power * 1.0)
+
         # throughput = sum(req_throughputs) / len(req_throughputs)
         throughput = sum_tokens / latency
-        total_avg_power = sum(powers_summary.values())
+        # total_avg_power = sum(powers_summary.values())
+        total_avg_power = sum(weighted_powers)
         violation_rate = self._compute_violation_rate()
         energy_efficiency = throughput / total_avg_power
 

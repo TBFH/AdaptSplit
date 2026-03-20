@@ -75,8 +75,8 @@ class RDRewardDecomposer(nn.Module):
         pred_avg = pred_returns / valid_steps
         target_avg = target_returns / valid_steps
 
-        print(f"[RD update] step_rewards.mean: {step_rewards.mean()}")
-        print(f"[RD update] pred_returns.mean: {pred_returns.mean()},  target_returns.mean: {target_returns.mean()}")
+        # print(f"[RD update] step_rewards.mean: {step_rewards.mean()}")
+        # print(f"[RD update] pred_returns.mean: {pred_returns.mean()},  target_returns.mean: {target_returns.mean()}")
 
         # loss = self.loss_fn(pred_returns, target_returns)
         loss = self.loss_fn(pred_avg, target_avg)

@@ -2,21 +2,29 @@ import json
 from typing import Any, Dict, List, Sequence, Tuple
 
 Task_description = "You are an expert in LLM systems, request characterization, and interpretable feature engineering. \
-You are studying LLM inference service optimization under heterogeneous SLOs, now you need to extract features from each incoming request.  \
-A Python function is needed to maps a prompt string to an interpretable 10-dimensional 1D vector for scheduling-oriented request characterization. \
+You are studying LLM inference service optimization under heterogeneous SLOs, and now need to extract features from each incoming request. \
+A Python function is needed to analyze the input prompt and map it into a fixed-dimensional 1D vector for scheduling-oriented request characterization. \
+Instead of using generic prompt properties such as complexity or structure, the vector should represent the application type of the request. \
+For example, requests may belong to categories such as ChatBot, Code Completion, Summarization, Discriminative Tasks or other meaningful application types decided by you. \
+Different application types usually imply different TTFT, TPOT SLO preferences. For example, ChatBot requests are usually highly interactive and often require tight TPOT constraints for smooth user experience; \
+Code Completion is latency-sensitive and often requires both fast TTFT and low TPOT; Summarization tasks are typically less interactive and may tolerate relatively loose TTFT constraints; other types may have their own typical SLO patterns. \
+Discriminative Tasks such as credit verification and data labeling usually have only one single or few tokens as output, which requires very loose TPOT.  \
 Requirements: \
 - Write a function and provide valid executable Python code as a string. \
-- You must decide the meaning of all 10 dimensions. \
-- Each dimension must be interpretable, with clear semantic meaning relevant to LLM request scheduling,  \
-  such as prompt complexity, structure, task type, reasoning difficulty, expected output burden, or other useful factors. \
+- You must decide the number of dimensions of the vector is 5 dimensions. \
+- Each dimension must correspond to one interpretable application type category. \
+- The function should analyze the input prompt and output a fixed-dimensional numeric vector indicating how strongly the request belongs to each application type. \
+- The categories must be designed by you and should be meaningful for LLM request scheduling under heterogeneous SLOs. \
+- When analyzing the application types, explicitly explain the typical TTFT, TPOT, or end-to-end latency sensitivity associated with each type, so that the resulting vector is useful for scheduling decisions. \
+- Each dimension must be interpretable, with clear semantic meaning, and the full vector should help characterize the request from the perspective of application type and likely SLO preference. \
 - The design should be practical, self-contained, and based on lightweight heuristics or text analysis, without external APIs or unavailable services. \
 - The vector should be stable and meaningful for similar prompts. \
 - Output JSON only, with nothing else. \
 Return strictly in JSON with exactly these keys: \
 { \
-    Understand: briefly explain your understanding of the task., \
-    Analyze: explain the meaning of each of the 10 dimensions and why they are useful., \
-    Functions: 'def sentence_embedding(prompt: str):\n    ...\n    return [a list of exactly 10 numeric values]' \
+    Understand: briefly explain your understanding of the task, \
+    Analyze: explain the chosen application-type dimensions, why they are useful, why the dimensionality was selected, and the typical TTFT/TPOT/SLO characteristics of each type, \
+    Functions: 'def sentence_embedding(prompt: str):\n    ...\n    return [a list of exactly 5 numeric values]' \
 }"
 
 
@@ -49,8 +57,8 @@ class SentenceEmbeddingPrompt:
                 if not isinstance(outputs, list):
                     raise ValueError("sentence_embedding must return a Python list")
                 embbeding_dim = len(outputs)
-                if embbeding_dim != 10:
-                    raise ValueError("sentence_embedding must return a list of exactly 10 numeric values")
+                if embbeding_dim != 5:
+                    raise ValueError("sentence_embedding must return a list of exactly 5 numeric values")
             except Exception as exc:
                 pass_check = False
                 error_idx = i

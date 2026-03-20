@@ -110,6 +110,7 @@ async def generate(request: Request) -> Response:
 
 @app.post("/profile")
 async def profile() -> Response:
+    await asyncio.sleep(0.1)
     profiles = engine.profile()
     return JSONResponse(profiles)
 

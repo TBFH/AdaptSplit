@@ -29,18 +29,22 @@ Inference method in node group L use layer-wise pipeline parallelism, where each
 Prefill and Decode have different compute characteristics, so actions trade SLO achievement, KV-cache transfer cost, \
 load balancing, and energy efficiency (which equals to throughput / average_total_power). "
 
-State_form = "The observation is 20 dimensions: \
-0-9: a 10 dimensions sentence embedding vector of the input request; \
-10: number of input token of the input request; \
-11: TTFT(Time To First Token) SLO target in ms for this request; \
-12: TPOT(average Time Per Output Token) SLO target in ms for this request; \
-13: total number of request in the waiting queue of node group H; \
-14: number of request in the waiting queue of node group L; \
-15: total number of request waiting to migrate KV Cache from node group H to L; \
-16: average usage of GPU memory for KV Cache of node group H; \
-17: usage of GPU memory for KV Cache of node group L; \
-18: average number of inflight request of node group H; \
-19: number of inflight request of node group L; "
+State_form = "The observation is 15 dimensions: \
+0: relevance with 'Interactive Chat' application type \
+1: relevance with 'Code Intelligence' application type \
+2: relevance with 'Summarization' application type \
+3: relevance with 'Discriminative Task' application type \
+4: relevance with 'Reasoning & Analysis' application type \
+5: number of input token of the input request; \
+6: TTFT(Time To First Token) SLO target in ms for this request; \
+7: TPOT(average Time Per Output Token) SLO target in ms for this request; \
+8: total number of request in the waiting queue of node group H; \
+9: number of request in the waiting queue of node group L; \
+10: total number of request waiting to migrate KV Cache from node group H to L; \
+11: average usage of GPU memory for KV Cache of node group H; \
+12: usage of GPU memory for KV Cache of node group L; \
+13: average number of inflight request of node group H; \
+14: number of inflight request of node group L; "
 
 Action_form = "The action is a single discrete routing strategy: \
 0: HPHD: Run Prefill on the high-performance group H and also run Decode on H. Best when SLO is tight, the output is very short, or when KV-cache transfer overhead must be avoided. \

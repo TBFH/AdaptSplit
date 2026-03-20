@@ -181,9 +181,9 @@ def callgpt(
 
 if __name__ == "__main__":
     env_context = {
-        "example_state": [0.0] * 20,
+        "example_state": [0.0] * 15,
         "example_action": 1,
-        "state_dim": 20,
+        "state_dim": 15,
         "action_dim": 3,
     }
     save_dir = Path("/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/reward_model/generated")
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     function = namespace["evaluation_func"]
     print("latent reward function loaded.")
 
-    test_state = [1.0] * 20
+    test_state = [1.0] * 15
     test_action = 1
     example_state = np.asarray([test_state] * 2, dtype=np.float32)
     example_action = np.asarray([[test_action]] * 2, dtype=np.int64)

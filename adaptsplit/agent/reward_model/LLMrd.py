@@ -106,5 +106,5 @@ class LLMRDRewardDecomposer(RDRewardDecomposer):
         latent_rewards = (latent_rewards - mean) / std
         latent_rewards = torch.clamp(latent_rewards, -5.0, 5.0)
 
-        print(f"[LLMrd forward] latent_rewards.mean: {latent_rewards.mean()}")
+        # print(f"[LLMrd forward] latent_rewards.mean: {latent_rewards.mean()}")
         return self.reward_model(latent_rewards)

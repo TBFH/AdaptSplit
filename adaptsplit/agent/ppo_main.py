@@ -255,9 +255,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=str, default="./outputs")  # !
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
-    parser.add_argument("--total-episodes", type=int, default=100)   # !
+    parser.add_argument("--total-episodes", type=int, default=150)   # !
     parser.add_argument("--log-interval", type=int, default=5)      # !
-    parser.add_argument("--save-interval", type=int, default=20)    # !
+    parser.add_argument("--save-interval", type=int, default=10)    # !
 
     parser.add_argument("--rd-method", type=str, default="LaRe_RD", choices=["none", "RD", "LaRe_RD"])
     parser.add_argument("--reward-lr", type=float, default=1e-4)
@@ -287,3 +287,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 if __name__ == "__main__":
     train(build_parser().parse_args())
+
+
+'''
+python -m adaptsplit.agent.ppo_main \
+    --env-config /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/env_config.json \
+    --output-dir /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/outputs \
+    --llm-model glm-5 \
+    --llm-response-dir /home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/reward_model/generated \
+    --state-norm
+'''

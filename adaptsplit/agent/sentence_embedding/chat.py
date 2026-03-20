@@ -199,7 +199,8 @@ if __name__ == "__main__":
     save_dir = Path("/home/austin/repos/AdaptSplit/AdaptSplit/adaptsplit/agent/sentence_embedding/generated")
     response_id = 0
     config = LLMCallConfig(
-        model="glm-5"
+        model="glm-5",
+        n_candidates=3
     )
     response_file = save_dir / f"response_{response_id}.npy"
 

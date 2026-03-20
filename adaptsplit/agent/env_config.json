@@ -6,10 +6,10 @@
     "reset_url": "http://127.0.0.1:32313/reset"
   },
   "model": "opt-1.3b",
-  "dataset_path": "/home/austin/datasets/agent_training/sharegpt-opt-1.3b-train.json",
-  "num_episode_requests": 50,
+  "dataset_path": "/home/austin/datasets/agent_training/opt-1.3b-train.json",
+  "num_episode_requests": 200,
   "reward_w1": 5.0,
-  "reward_w2": 20.0,
+  "reward_w2": 10.0,
   "seed": 1,
   "request_timeout_s": 3600,
   "max_workers": 512,
