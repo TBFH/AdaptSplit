@@ -46,18 +46,18 @@ TTFT_TPOT_SLO = {
     },
     "alpaca": {
         "opt-1.3b": (1500, 750),
-        "Llama-2-7b-chat-hf": (2500, 1250),
-        "Meta-Llama-3-8B-Instruct": (500, 300),
+        "Llama-2-7b-chat-hf": (3000, 1500),
+        "Meta-Llama-3-8B-Instruct": (3500, 2000),
     },
     "humaneval": {
         "opt-1.3b": (500, 1000),
-        "Llama-2-7b-chat-hf": (1000, 1250),
-        "Meta-Llama-3-8B-Instruct": (2000, 1500),
+        "Llama-2-7b-chat-hf": (1000, 2000),
+        "Meta-Llama-3-8B-Instruct": (1500, 2500),
     },
     "longbench": {
         "opt-1.3b": (3000, 200),
-        "Llama-2-7b-chat-hf": (15000, 750),
-        "Meta-Llama-3-8B-Instruct": (20000, 1000),
+        "Llama-2-7b-chat-hf": (10000, 500),
+        "Meta-Llama-3-8B-Instruct": (15000, 750),
     },
 }
 

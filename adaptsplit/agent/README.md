@@ -108,7 +108,8 @@ python ppo_main.py \
 python -m adaptsplit.api_server.adaptsplit_api_server \
     --host localhost \
     --port 32313 \
-    --model /mnt/Data/austin/hf_models/opt-1.3b \
+    --model /mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct \
+    --decoding-devices "['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-16g-7']" \
     --global-schedule-policy random \
     --auto-batchsize
 ```

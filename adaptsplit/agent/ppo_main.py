@@ -256,7 +256,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
     parser.add_argument("--total-episodes", type=int, default=150)   # !
-    parser.add_argument("--log-interval", type=int, default=5)      # !
+    parser.add_argument("--log-interval", type=int, default=2)      # !
     parser.add_argument("--save-interval", type=int, default=10)    # !
 
     parser.add_argument("--rd-method", type=str, default="LaRe_RD", choices=["none", "RD", "LaRe_RD"])

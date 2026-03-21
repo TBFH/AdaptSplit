@@ -53,7 +53,7 @@ class RequestItem:
         output_length = int(data.get("output_length"))
         ttft_slo_ms = float(data.get("ttft_slo_ms"))
         tpot_slo_ms = float(data.get("tpot_slo_ms"))
-        embedding_value = data.get("embedding")
+        embedding_value = data.get("embedding", None)
         embedding = None
         if embedding_value is not None:
             embedding = np.asarray(embedding_value, dtype=np.float32)

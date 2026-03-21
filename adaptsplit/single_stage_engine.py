@@ -476,7 +476,7 @@ class PrefillStageLLMEngine(SingleStageLLMEngine):
                 if (self.model_config.hf_config.model_type == "llama"):
                     SPIECE_UNDERLINE = "▁"
                     if generated_tokens_ids != [] and (max(generated_tokens_ids) > self.model_config.hf_config.vocab_size or min(generated_tokens_ids) < 0):
-                        print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
+                        # print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
                         generated_tokens_ids = [max(0, min(x, self.model_config.hf_config.vocab_size - 1)) for x in generated_tokens_ids]
                     _tokenlist = self.tokenizer.convert_ids_to_tokens(generated_tokens_ids)
                     generated_tokens = []
@@ -801,7 +801,7 @@ class DecodingStageLLMEngine(SingleStageLLMEngine):
                 if (self.model_config.hf_config.model_type == "llama"):
                     SPIECE_UNDERLINE = "▁"
                     if generated_tokens_ids != [] and (max(generated_tokens_ids) > self.model_config.hf_config.vocab_size or min(generated_tokens_ids) < 0):
-                        print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
+                        # print('Warning: generated token id exceeds vocab size', f'generated_tokens_ids: {generated_tokens_ids}')
                         generated_tokens_ids = [max(0, min(x, self.model_config.hf_config.vocab_size - 1)) for x in generated_tokens_ids]
                     _tokenlist = self.tokenizer.convert_ids_to_tokens(generated_tokens_ids)
                     generated_tokens = []
