@@ -27,7 +27,7 @@ class OpenAIResponsesClient:
     imported without requiring the OpenAI package.
     """
 
-    def __init__(self, model: str, temperature: float = 0.2) -> None:
+    def __init__(self, model: str, temperature: float = 0.2, thinking: bool = False) -> None:
         try:
             from openai import OpenAI
         except ImportError as exc:  # pragma: no cover - runtime dependency
@@ -41,12 +41,15 @@ class OpenAIResponsesClient:
         )
         self.model = model
         self.temperature = temperature
+        self.thinking = thinking
 
     def generate(self, messages: Sequence[Dict[str, str]]) -> str:
         completion = self.client.chat.completions.create(
             model=self.model,
             messages=list(messages),
             # temperature=self.temperature,
+            # 通过 extra_body 设置 enable_thinking 开启思考模式
+            extra_body={"enable_thinking": self.thinking},
         )
         out = completion.choices[0].message.content
         return str(out)
@@ -130,7 +133,7 @@ def callgpt(
     cfg = config or LLMCallConfig()
     prompt = SchedulerPrompt(context=env_context, factor=cfg.factor)
     base_messages = prompt.get_messages()
-    llm = OpenAIResponsesClient(model=cfg.model, temperature=cfg.temperature)
+    llm = OpenAIResponsesClient(model=cfg.model, temperature=cfg.temperature, thinking=True)
 
     dialog: List[Dict[str, Any]] = [{"stage": "base_messages", "messages": base_messages}]
 

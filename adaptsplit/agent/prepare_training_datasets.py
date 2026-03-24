@@ -14,14 +14,14 @@ from adaptsplit.agent.sentence_embedding.chat import SentenceEmbedder
 
 '''
 python -m adaptsplit.agent.prepare_training_datasets \
-    --tokenizer /mnt/Data/austin/hf_models/opt-1.3b \
+    --tokenizer /mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct \
     --output-dir /home/austin/datasets/agent_training/ \
     --sample
 '''
 
 '''
 python -m adaptsplit.agent.prepare_training_datasets \
-    --tokenizer /mnt/Data/austin/hf_models/opt-1.3b \
+    --tokenizer /mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct \
     --output-dir /home/austin/datasets/agent_training/ \
     --reset
 '''
@@ -185,7 +185,7 @@ def sample_dataset(
             if is_train:
                 append_all(result, "alpaca", prompt, prompt_len, output_len, id_counter)
                 current_counter += 1
-                if current_counter >= 500:
+                if current_counter >= 330:
                     is_train = False
             else:
                 append_all(for_evals, "alpaca", prompt, prompt_len, output_len, id_counter)
@@ -221,7 +221,7 @@ def sample_dataset(
         
         save(for_evals, f"{args.model}-humaneval-eval.json")
         
-        filtered_dataset = filtered_dataset * 6
+        filtered_dataset = filtered_dataset * 4
         result = result + filtered_dataset
     
 
@@ -249,14 +249,14 @@ def sample_dataset(
                     context_len = len(context_token_ids)
                     answer_len = len(answer_token_ids)
                     
-                    context_len_allowed = min(2040 - answer_len, random.randint(args.longbench_min_prompt_len, args.longbench_max_prompt_len))
+                    context_len_allowed = min(2000 - answer_len, random.randint(args.longbench_min_prompt_len, args.longbench_max_prompt_len))
                     context_token_ids = context_token_ids[:context_len_allowed]
                     prompt = tokenizer.decode(context_token_ids)
 
                     if is_train:
                         append_all(result, "longbench", prompt, len(context_token_ids), answer_len, id_counter)
                         current_counter += 1
-                        if current_counter >= 15:
+                        if current_counter >= 9:
                             is_train = False
                     else:
                         append_all(for_evals, "longbench", prompt, len(context_token_ids), answer_len, id_counter)

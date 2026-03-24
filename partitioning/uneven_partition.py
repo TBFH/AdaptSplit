@@ -9,9 +9,11 @@ from partitioning.pipeline_simulator import PipelineSimulator
 SIM_OUTPUT_LEN = 32
 
 TOPS = {
-    "jetson-64g": 275,
-    "jetson-16g": 157,
-    "jetson-8g": 67
+    "jetson-64g-4": 275,
+    "jetson-16g-2": 157,
+    "jetson-16g-7": 98,
+    "jetson-16g-8": 157,
+    "jetson-8g-1": 67
 }
 
 def get_tops(device_name: str):

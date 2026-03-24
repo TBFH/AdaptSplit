@@ -378,6 +378,11 @@ class ParaWorker:
         for i in range(len(k_cache)):
             self.k_cache[target_block_indexes[i], layer_bound[0]:layer_bound[1], :, :, :].copy_(k_cache[i])
             self.v_cache[target_block_indexes[i], layer_bound[0]:layer_bound[1], :, :, :].copy_(v_cache[i])
+        del k_cache
+        del v_cache
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
         return True
         
     def swap_blocks(
