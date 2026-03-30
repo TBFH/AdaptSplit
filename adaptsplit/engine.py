@@ -176,7 +176,9 @@ class LLMEngine:
 
         self.disagg_parallel_config = disagg_parallel_config
 
+        self.search_time = -1.0
         if len(disagg_parallel_config.decoding.pipeline_distribution) == 0:
+            search_start = time.time()
             disagg_parallel_config.decoding.pipeline_distribution = search_optimal_partition(
                 model=self.model_config.model.split("/")[-1],
                 devices=decoding_devices,
@@ -184,6 +186,7 @@ class LLMEngine:
                 total_nlayer=self.model_config.get_num_layers(),
                 max_batch_size_callback=self._max_batch_size_callback
             )
+            self.search_time = time.time() - search_start
 
         self.disagg_parallel_config = disagg_parallel_config
 

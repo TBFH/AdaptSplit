@@ -121,6 +121,7 @@ async def summary(request: Request) -> Response:
     start = request_dict["start"]
     end = request_dict["end"]
     summarys = engine.summary(start, end)
+    summarys.pop('pc-3090-1', None)
     return JSONResponse(summarys)
 
 

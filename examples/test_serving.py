@@ -10,9 +10,9 @@ from adaptsplit.config import (
     ExtraConfig
 )
 
-parser = argparse.ArgumentParser()
-parser.add_argument('--model', type=str, help='The model to use', default='/mnt/Data/austin/hf_models/opt-1.3b')
-args = parser.parse_args()
+# MODEL_PATH = "/mnt/Data/austin/hf_models/opt-1.3b"
+MODEL_PATH = "/mnt/Data/austin/hf_models/Llama-2-7b-chat-hf"
+# MODEL_PATH = "/mnt/Data/austin/hf_models/Meta-Llama-3-8B-Instruct"
 
 # Sample prompts.
 prompts = [
@@ -21,22 +21,22 @@ prompts = [
     "Artificial intelligence is",
     "To be or not to be,",
     "one two three four"
-] * 16
+] * 100
 
 # Create a sampling params object.
 sampling_params = []
-# mt = [64, 32, 8, 42, 72] * 12
+mt = [64, 32, 8, 42, 72] * 100
 for i in range(len(prompts)):
     sampling_param = SamplingParams(
-        temperature=0.8, top_p=0.95, max_tokens=8, stop=[]
-        # temperature=0.8, top_p=0.95, max_tokens=mt[i], stop=[]
+        # temperature=0.8, top_p=0.95, max_tokens=8, stop=[]
+        temperature=0.8, top_p=0.95, max_tokens=mt[i], stop=[]
     )
     sampling_params.append(sampling_param)
 
 # Create an LLM for offline inference.
 llm = OfflineLLM(
     model_config=ModelConfig(
-        model=args.model,
+        model=MODEL_PATH,
         tokenizer=None
     ),
     disagg_parallel_config=DisaggParallelConfig(
@@ -49,7 +49,7 @@ llm = OfflineLLM(
         )
     ),
     prefill_devices=['pc-3090', 'pc-4090'],
-    decoding_devices=['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-8g-1'],
+    decoding_devices=['jetson-64g-4', 'jetson-16g-2', 'jetson-16g-8', 'jetson-16g-7'],
     cache_config=CacheConfig(
         block_size=16,
         max_num_blocks_per_req=1024,
@@ -58,16 +58,16 @@ llm = OfflineLLM(
     ),
     prefill_sched_config=PrefillStageSchedConfig(
         policy="fcfs",
-        max_batch_size=5,
+        max_batch_size=32,
         max_tokens_per_batch=16384
     ),
     decoding_sched_config=DecodingStageSchedConfig(
         policy="fcfs",
-        max_batch_size=5,
+        max_batch_size=32,
         max_tokens_per_batch=16384,
         waiting_block_prop_threshold=0.5    # 可调整以防止Prefill死锁
     ),
-    global_schedule_policy="lpld",
+    global_schedule_policy="random",
     extra_configs=ExtraConfig(
         print_log=False,
         sched_bar=False,
@@ -75,7 +75,8 @@ llm = OfflineLLM(
         enable_records=False,
         records_dir="/home/austin/repos/AdaptSplit/evals/stats/testing",
         pptimer_url="http://219.222.20.79:31063",
-        prebenchmark=False
+        prebenchmark=False,
+        auto_batchsize=True
     )
 )
 

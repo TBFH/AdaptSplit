@@ -138,6 +138,9 @@ class OfflineLLM:
     def reset(self) -> None:
         self.engine.reset_all()
 
+    def get_search_time(self) -> float:
+        return self.engine.search_time
+
 class AsyncLLM:
     """A Large Language Model (LLM) for online inference."""
 
